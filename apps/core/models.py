@@ -165,7 +165,7 @@ class Pagos(models.Model):
     metodo_pago = models.TextField()
     monto = models.FloatField(blank=True, null=True)
     estado_pago = models.BooleanField(blank=True, null=True)
-    fecha_pago = models.FloatField(blank=True, null=True)
+    fecha_pago = models.DateTimeField(blank=True, null=True)  # en la base es timestamptz
     id_pedido = models.ForeignKey('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
 
     class Meta:
@@ -176,11 +176,15 @@ class Pagos(models.Model):
 class Pedidos(models.Model):
     id_pedido = models.BigAutoField(primary_key=True)
     fecha = models.DateTimeField()
-    estado = models.DateField(blank=True, null=True)
+    estado = models.TextField(blank=True, null=True)  # en la base es text ('pendiente', ...)
     total = models.FloatField(blank=True, null=True)
     direccion_entega = models.CharField(blank=True, null=True)
+    tipo_entrega = models.TextField(default='domicilio')  # CHECK en la base: 'domicilio' | 'retiro'
     id_usuario = models.ForeignKey('Usuarios', models.DO_NOTHING, db_column='id_usuario', blank=True, null=True)
     id_restaurante = models.ForeignKey('Restaurantes', models.DO_NOTHING, db_column='id_restaurante', blank=True, null=True)
+    # Agregada 2026-11-18. Null = todavía nadie lo tomó (o es para retiro).
+    id_repartidor = models.ForeignKey('Repartidor', models.DO_NOTHING, db_column='id_repartidor', blank=True, null=True,
+                                      related_name='pedidos')
 
     class Meta:
         managed = False
@@ -207,9 +211,12 @@ class Productos(models.Model):
 class Repartidor(models.Model):
     id_repartidor = models.BigAutoField(primary_key=True)
     nombre = models.CharField()
-    telefono = models.SmallIntegerField(blank=True, null=True)
+    telefono = models.CharField(blank=True, null=True)  # en la base es varchar
     vehiculo = models.CharField(blank=True, null=True)
     disponible = models.BooleanField(blank=True, null=True)
+    # Agregada 2026-11-18 (UNIQUE en la base): la cuenta con la que el repartidor entra a la app.
+    id_usuario = models.OneToOneField('Usuarios', models.DO_NOTHING, db_column='id_usuario', blank=True, null=True,
+                                      related_name='repartidor')
 
     class Meta:
         managed = False
@@ -220,7 +227,9 @@ class Restaurantes(models.Model):
     id_restaurante = models.BigAutoField(primary_key=True)
     nombre = models.CharField()
     direccion = models.CharField(blank=True, null=True)
-    telefono = models.SmallIntegerField(blank=True, null=True)
+    telefono = models.CharField(blank=True, null=True)  # en la base es varchar
+    costo_envio = models.FloatField(blank=True, null=True)
+    pedido_minimo = models.FloatField(blank=True, null=True)
     categoria = models.TextField(blank=True, null=True)
     estado = models.CharField(blank=True, null=True)
 
@@ -230,11 +239,25 @@ class Restaurantes(models.Model):
         db_table_comment = 'infromacion de los comercios'
 
 
+class HorariosRestaurante(models.Model):
+    id_horario = models.BigAutoField(primary_key=True)
+    id_restaurante = models.ForeignKey(Restaurantes, models.DO_NOTHING, db_column='id_restaurante', related_name='horarios')
+    # Supuesto: dia_semana ISO, 1 = lunes ... 7 = domingo.
+    dia_semana = models.SmallIntegerField()
+    hora_apertura = models.TimeField(blank=True, null=True)
+    hora_cierre = models.TimeField(blank=True, null=True)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        managed = False
+        db_table = 'horarios_restaurante'
+
+
 class Usuarios(models.Model):
     id_usuario = models.BigAutoField(primary_key=True)
     nombre = models.CharField()
     email = models.CharField(blank=True, null=True)
-    telefono = models.SmallIntegerField(blank=True, null=True)
+    telefono = models.CharField(max_length=30, blank=True, null=True)  # en la base es varchar(30)
     contrasena = models.CharField(blank=True, null=True)
     direccion = models.CharField(blank=True, null=True)
     rol = models.BooleanField(blank=True, null=True)

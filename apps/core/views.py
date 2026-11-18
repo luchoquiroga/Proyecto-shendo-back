@@ -4,8 +4,11 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from .models import Productos, Usuarios, Pedidos, Categoria
+from .models import Productos, Usuarios, Pedidos, Categoria, Restaurantes
+from django.contrib.auth.hashers import check_password, identify_hasher, make_password
 from django.core.files.storage import default_storage
+from rest_framework.permissions import IsAuthenticated
+from .permissions import IsRestaurantStaffOrReadOnly, IsOrderParticipantOnly
 
 #este DEF lo que hace es leer el token JWT del header de la peticion
 #y devuelve el id_restaurante que esta guardado dentro del token. 
@@ -28,21 +31,40 @@ def get_restaurante_from_token(request):
         return None
 
 
+def contrasena_valida(usuario, contrasena):
+    """Acepta hash de Django y, para las cuentas viejas, texto plano: si coincide, lo reemplaza por el hash."""
+    guardada = usuario.contrasena or ''
+    try:
+        identify_hasher(guardada)
+    except ValueError:
+        # No es un hash: contraseña vieja en texto plano.
+        if guardada and guardada == contrasena:
+            usuario.contrasena = make_password(contrasena)
+            usuario.save(update_fields=['contrasena'])
+            return True
+        return False
+    return check_password(contrasena, guardada)
+
+
 class LoginView(APIView):
+    throttle_scope = 'login'
 
     def post(self, request):
         nombre = request.data.get('nombre')
         contrasena = request.data.get('contrasena')
 
-        if not nombre or not contrasena:
+        if not nombre or not isinstance(contrasena, str) or not contrasena:
             return Response(
                 {'error': 'Usuario y contraseña son requeridos'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        try:
-            usuario = Usuarios.objects.get(nombre=nombre, contrasena=contrasena)
-        except Usuarios.DoesNotExist:
+        # No hay UNIQUE en nombre: se prueba cada usuario con ese nombre.
+        usuario = next(
+            (u for u in Usuarios.objects.filter(nombre=nombre).order_by('id_usuario') if contrasena_valida(u, contrasena)),
+            None,
+        )
+        if usuario is None:
             return Response(
                 {'error': 'Credenciales inválidas'},
                 status=status.HTTP_401_UNAUTHORIZED
@@ -125,19 +147,18 @@ class ProductosView(APIView):
         disponible =request.data.get('disponible', True)
         
         if isinstance(disponible, str):
-         disponible = disponible.lower() == 'true'
+            disponible = disponible.lower() == 'true'
 
-         imagen_url = ''
+        # Antes estaba dentro del if de arriba: con JSON (disponible booleano) imagen_url no existía y daba error 500.
+        imagen_url = ''
 
-         if 'imagen' in request.FILES:
-             print("ARCHIVO RECIBIDO:", request.FILES.get('imagen'))
-             imagen = request.FILES['imagen']
-             ruta_imagen = default_storage.save(
-                 f'productos/{imagen.name}',
-                 imagen
+        if 'imagen' in request.FILES:
+            imagen = request.FILES['imagen']
+            ruta_imagen = default_storage.save(
+                f'productos/{imagen.name}',
+                imagen
             )
-             print("RUTA GUARDADA:", ruta_imagen)
-             imagen_url = f'/media/{ruta_imagen}'
+            imagen_url = f'/media/{ruta_imagen}'
 
         producto = Productos.objects.create(
             nombre=nombre,
@@ -169,7 +190,7 @@ class PedidosView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
-        pedidos = Pedidos.objects.filter(id_restaurante=id_restaurante)
+        pedidos = Pedidos.objects.filter(id_restaurante=id_restaurante).select_related('id_repartidor')
 
         data = [
             {
@@ -179,6 +200,8 @@ class PedidosView(APIView):
                 "total": float(p.total) if p.total else 0,
                 "direccion_entega": p.direccion_entega,
                 "id_usuario": p.id_usuario_id,
+                "tipo_entrega": p.tipo_entrega,
+                "repartidor": p.id_repartidor.nombre if p.id_repartidor else None,
             }
             for p in pedidos
         ]
@@ -202,117 +225,157 @@ class PedidosView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        pedido.estado = request.data.get('estado', pedido.estado)
+        estado = request.data.get('estado')
+        # shortcut: solo se valida que sea texto corto; si el panel fija una lista de estados, validar contra esa lista.
+        if not isinstance(estado, str) or not estado.strip() or len(estado) > 50:
+            return Response(
+                {'error': 'estado es requerido (texto de hasta 50 caracteres)'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        pedido.estado = estado.strip()
         pedido.save()
         return Response({'id_pedido': pedido.id_pedido, 'estado': pedido.estado})
-   
-   
-    #lista de categorias
+
+
+def nombre_categoria(request):
+    """Nombre limpio de la categoría del body, o None si no es válido."""
+    nombre = request.data.get('nombre')
+    if not isinstance(nombre, str) or not nombre.strip() or len(nombre) > 100:
+        return None
+    return nombre.strip()
+
+
+TOKEN_INVALIDO = {'error': 'Token inválido o no enviado'}
+NOMBRE_INVALIDO = {'error': 'nombre es requerido (hasta 100 caracteres)'}
+
+
+# CATEGORÍAS: igual que productos, todo filtrado por el restaurante del token.
 class CategoriasView(APIView):
 
     def get(self, request):
-
         id_restaurante = get_restaurante_from_token(request)
+        if not id_restaurante:
+            return Response(TOKEN_INVALIDO, status=status.HTTP_401_UNAUTHORIZED)
 
-        categorias = Categoria.objects.filter(
-            id_restaurante=id_restaurante
-        )
-
-        data = [
-            {
-                "id_categoria": c.id_categoria,
-                "nombre": c.nombre
-            }
+        categorias = Categoria.objects.filter(id_restaurante=id_restaurante)
+        return Response([
+            {"id_categoria": c.id_categoria, "nombre": c.nombre}
             for c in categorias
-        ]
+        ])
 
-        return Response(data)
-#crear categorias
-def post(self, request):
+    def post(self, request):
+        id_restaurante = get_restaurante_from_token(request)
+        if not id_restaurante:
+            return Response(TOKEN_INVALIDO, status=status.HTTP_401_UNAUTHORIZED)
 
-    id_restaurante = get_restaurante_from_token(request)
+        nombre = nombre_categoria(request)
+        if nombre is None:
+            return Response(NOMBRE_INVALIDO, status=status.HTTP_400_BAD_REQUEST)
 
-    nombre = request.data.get("nombre")
-
-    categoria = Categoria.objects.create(
-        nombre=nombre,
-        id_restaurante_id=id_restaurante
-    )
-
-    return Response(
-        {
-            "id_categoria": categoria.id_categoria,
-            "nombre": categoria.nombre
-        },
-        status=status.HTTP_201_CREATED
-    )
-
-#edicion de la categoria
-def put(self, request, categoria_id):
-
-    id_restaurante = get_restaurante_from_token(request)
-
-    try:
-        categoria = Categoria.objects.get(
-            pk=categoria_id,
-            id_restaurante=id_restaurante
-        )
-
-    except Categoria.DoesNotExist:
-
+        categoria = Categoria.objects.create(nombre=nombre, id_restaurante_id=id_restaurante)
         return Response(
-            {"error": "Categoria no encontrada"},
-            status=status.HTTP_404_NOT_FOUND
+            {"id_categoria": categoria.id_categoria, "nombre": categoria.nombre},
+            status=status.HTTP_201_CREATED
         )
 
-    categoria.nombre = request.data.get(
-        "nombre",
-        categoria.nombre
-    )
 
-    categoria.save()
-
-    return Response({
-        "id_categoria": categoria.id_categoria,
-        "nombre": categoria.nombre
-    })
-
-#esta parte es de categoria pero de agregar y eliminar
 class CategoriaDetailView(APIView):
 
+    def categoria(self, request, categoria_id):
+        """(categoria, None) si es del restaurante del token; si no, (None, respuesta de error)."""
+        id_restaurante = get_restaurante_from_token(request)
+        if not id_restaurante:
+            return None, Response(TOKEN_INVALIDO, status=status.HTTP_401_UNAUTHORIZED)
+        categoria = Categoria.objects.filter(pk=categoria_id, id_restaurante=id_restaurante).first()
+        if categoria is None:
+            return None, Response({"error": "Categoría no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+        return categoria, None
+
     def put(self, request, categoria_id):
-        try:
-            categoria = Categoria.objects.get(pk=categoria_id)
-        except Categoria.DoesNotExist:
-            return Response(
-                {"error": "Categoría no encontrada"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        categoria, respuesta = self.categoria(request, categoria_id)
+        if respuesta:
+            return respuesta
 
-        categoria.nombre = request.data.get(
-            "nombre",
-            categoria.nombre
-        )
+        nombre = nombre_categoria(request)
+        if nombre is None:
+            return Response(NOMBRE_INVALIDO, status=status.HTTP_400_BAD_REQUEST)
 
+        categoria.nombre = nombre
         categoria.save()
-
-        return Response({
-            "id_categoria": categoria.id_categoria,
-            "nombre": categoria.nombre
-        })
+        return Response({"id_categoria": categoria.id_categoria, "nombre": categoria.nombre})
 
     def delete(self, request, categoria_id):
-        try:
-            categoria = Categoria.objects.get(pk=categoria_id)
-        except Categoria.DoesNotExist:
+        categoria, respuesta = self.categoria(request, categoria_id)
+        if respuesta:
+            return respuesta
+
+        # La FK de productos no tiene cascada: borrar una categoría en uso rompería en la base.
+        if Productos.objects.filter(id_categoria=categoria).exists():
             return Response(
-                {"error": "Categoría no encontrada"},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": "La categoría tiene productos; cambiales la categoría antes de borrarla"},
+                status=status.HTTP_409_CONFLICT
             )
 
         categoria.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
-        return Response(
-            {"mensaje": "Categoría eliminada"},
-            status=status.HTTP_204_NO_CONTENT
-        )
+
+# PERFIL DEL LOCAL: el restaurante del token ve y edita sus datos (envío, mínimo, abierto/cerrado).
+# Los horarios se cargan desde el admin de Django.
+CAMPOS_TEXTO_LOCAL = {'nombre': 100, 'direccion': 255, 'telefono': 30, 'estado': 30}
+CAMPOS_NUMERO_LOCAL = ('costo_envio', 'pedido_minimo')
+
+
+def restaurante_json(r):
+    return {
+        'id_restaurante': r.id_restaurante,
+        'nombre': r.nombre,
+        'direccion': r.direccion,
+        'telefono': r.telefono,
+        'costo_envio': float(r.costo_envio) if r.costo_envio is not None else None,
+        'pedido_minimo': float(r.pedido_minimo) if r.pedido_minimo is not None else None,
+        'estado': r.estado,
+    }
+
+
+class RestauranteView(APIView):
+
+    def restaurante(self, request):
+        id_restaurante = get_restaurante_from_token(request)
+        return Restaurantes.objects.filter(pk=id_restaurante).first() if id_restaurante else None
+
+    def get(self, request):
+        r = self.restaurante(request)
+        if r is None:
+            return Response(TOKEN_INVALIDO, status=status.HTTP_401_UNAUTHORIZED)
+        return Response(restaurante_json(r))
+
+    def patch(self, request):
+        r = self.restaurante(request)
+        if r is None:
+            return Response(TOKEN_INVALIDO, status=status.HTTP_401_UNAUTHORIZED)
+
+        for campo, largo in CAMPOS_TEXTO_LOCAL.items():
+            if campo in request.data:
+                valor = request.data[campo]
+                if not isinstance(valor, str) or len(valor.strip()) > largo or (campo == 'nombre' and not valor.strip()):
+                    return Response({'error': f'{campo} no es válido (texto de hasta {largo} caracteres)'},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                setattr(r, campo, valor.strip())
+
+        for campo in CAMPOS_NUMERO_LOCAL:
+            if campo in request.data:
+                valor = request.data[campo]
+                if valor is not None:
+                    try:
+                        valor = float(valor)
+                    except (TypeError, ValueError):
+                        valor = -1
+                    if isinstance(request.data[campo], bool) or not 0 <= valor <= 10_000_000:
+                        return Response({'error': f'{campo} tiene que ser un número mayor o igual a 0'},
+                                        status=status.HTTP_400_BAD_REQUEST)
+                setattr(r, campo, valor)
+
+        r.save()
+        return Response(restaurante_json(r))

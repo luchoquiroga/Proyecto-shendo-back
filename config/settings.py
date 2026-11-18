@@ -6,11 +6,16 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = '1234567890abcdef1234567890abcdef' #Puse esto para evitar problemas de seguridad.
+# En producción: SECRET_KEY propia y DEBUG=False en el .env. Los valores por defecto son solo para desarrollo.
+SECRET_KEY = os.getenv('SECRET_KEY', '1234567890abcdef1234567890abcdef')
 
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = []
+# 10.0.2.2 es la PC vista desde el emulador de Android (app mobile de clientes).
+# Para un celular fisico: ALLOWED_HOSTS=192.168.x.x en el .env
+ALLOWED_HOSTS = ['.localhost', '127.0.0.1', '[::1]', '10.0.2.2'] + [
+    h.strip() for h in os.getenv('ALLOWED_HOSTS', '').split(',') if h.strip()
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -20,6 +25,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'apps.core',
+    'apps.clientes',
     'corsheaders',
     'rest_framework',
 ]
@@ -54,11 +60,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Sin autenticacion automatica la manejamos manualmente en views.py
-# con get_restaurante_from_token()
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'apps.core.authentication.CustomJWTAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [],
+    # Anti fuerza bruta: las vistas con throttle_scope = 'login' admiten 10 intentos por minuto por IP.
+    'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],
+    'DEFAULT_THROTTLE_RATES': {'login': '10/min'},
 }
 
 DATABASES = {
@@ -85,6 +94,10 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
-CORS_ALLOW_ALL_ORIGINS = True
+# Solo el panel React puede llamar a la API desde un navegador (la app Android no usa CORS).
+# En producción: CORS_ALLOWED_ORIGINS=https://panel.ejemplo.com en el .env (separados por coma).
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if o.strip()
+]
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
