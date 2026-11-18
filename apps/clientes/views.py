@@ -411,9 +411,7 @@ def pedidos_json(pedidos):
             'subtotal': float(d.subtotal) if d.subtotal is not None else 0.0,
         })
 
-    pagos = {}
-    for pago in Pagos.objects.filter(id_pedido__in=ids).order_by('id_pago'):
-        pagos.setdefault(pago.id_pedido_id, pago)  # si hay más de uno, el primero
+    pagos = {pago.id_pedido_id: pago for pago in Pagos.objects.filter(id_pedido__in=ids)}
 
     data = []
     for p in pedidos:

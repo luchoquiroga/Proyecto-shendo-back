@@ -91,7 +91,7 @@ class Categoria(models.Model):
 
 class DetallePedido(models.Model):
     id_detalle = models.BigAutoField(primary_key=True)
-    cantidad = models.FloatField()
+    cantidad = models.IntegerField()
     subtotal = models.FloatField(blank=True, null=True)
     id_pedido = models.ForeignKey('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
     id_producto = models.ForeignKey('Productos', models.DO_NOTHING, db_column='id_producto', blank=True, null=True)
@@ -147,26 +147,14 @@ class DjangoSession(models.Model):
         db_table = 'django_session'
 
 
-class Entrega(models.Model):
-    id_entrega = models.BigAutoField(primary_key=True)
-    estado = models.BooleanField()
-    hora_salida = models.TimeField(blank=True, null=True)
-    hora_entrega = models.TimeField(blank=True, null=True)
-    id_pedido = models.ForeignKey('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
-    id_repartidor = models.ForeignKey('Repartidor', models.DO_NOTHING, db_column='id_repartidor', blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = 'entrega'
-
-
 class Pagos(models.Model):
     id_pago = models.BigAutoField(primary_key=True)
     metodo_pago = models.TextField()
     monto = models.FloatField(blank=True, null=True)
     estado_pago = models.BooleanField(blank=True, null=True)
     fecha_pago = models.DateTimeField(blank=True, null=True)  # en la base es timestamptz
-    id_pedido = models.ForeignKey('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
+    # UNIQUE en la base: un pago por pedido.
+    id_pedido = models.OneToOneField('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
 
     class Meta:
         managed = False

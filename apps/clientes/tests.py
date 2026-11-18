@@ -321,7 +321,6 @@ class PedidosTest(ClienteTest):
         Pedidos.objects.create(fecha=ahora, estado='pendiente', id_usuario=otro, id_restaurante=self.rest)
         DetallePedido.objects.create(id_pedido=nuevo, id_producto=None, cantidad=2.0, subtotal=None)
         Pagos.objects.create(id_pedido=nuevo, metodo_pago='transferencia', monto=10.0, estado_pago=True)
-        Pagos.objects.create(id_pedido=nuevo, metodo_pago='efectivo', monto=10.0, estado_pago=False)
 
         r = self.client.get(self.URL)
         self.assertEqual([p['id_pedido'] for p in r.data], [nuevo.id_pedido, viejo.id_pedido])
