@@ -286,6 +286,8 @@ class PedidosView(CuerpoObjetoMixin, APIView):
 
         pedido.estado = estado.strip()
         pedido.save()
+        from apps.clientes.avisos import avisar_pedido  # acá: evita import circular core <-> clientes
+        avisar_pedido(pedido, repartidores=pedido.tipo_entrega == 'domicilio')
         return Response({'id_pedido': pedido.id_pedido, 'estado': pedido.estado})
 
 

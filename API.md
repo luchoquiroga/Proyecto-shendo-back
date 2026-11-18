@@ -100,4 +100,27 @@ En el panel, `GET /api/orders/` muestra `tipo_entrega` y el nombre del `repartid
 - **XSS:** la API solo devuelve JSON; el escapado lo hace el front al renderizar.
 - **IDOR:** cada endpoint filtra por el restaurante, el cliente o el repartidor del token; un id ajeno da `404`/`409`. El repartidor ve los datos del cliente solo después de tomar el pedido.
 - **Carreras:** tomar un pedido y descontar stock son `UPDATE` condicionales: si dos lo hacen a la vez, solo uno gana.
-- **Tiempo real:** sin WebSocket. La app consulta `pedidos/` periódicamente (polling) para ver los cambios de estado; evita sumar Django Channels y un servidor ASGI.
+- **Tiempo real:** WebSocket que solo avisa (ver abajo); los datos siempre se leen por REST. La app además consulta cada 60 s como respaldo.
+
+## Avisos en tiempo real (WebSocket)
+
+`runserver` sirve HTTP y WebSocket (daphne). Conexiones de solo salida, con el access token en la URL:
+
+| Ruta | Token | Quién |
+|---|---|---|
+| `ws://<host>:8000/ws/cliente/?token=<access>` | de la app | cliente |
+| `ws://<host>:8000/ws/repartidor/?token=<access>` | de la app, cuenta de repartidor | repartidor |
+| `ws://<host>:8000/ws/restaurante/?token=<access>` | del panel | restaurante |
+
+Token inválido, vencido, de otro tipo o cuenta no vigente: la conexión se cierra con código `4401` (renovar el token y reconectar). El token se valida al conectar.
+
+Cada aviso es `{"tipo": "pedido", "id_pedido": N}`: **recargá por REST** (`cliente/pedidos/`, `repartidor/disponibles/` y `pedidos/`, o `orders/` en el panel).
+
+| Evento | Reciben aviso |
+|---|---|
+| Pedido nuevo | cliente que pidió, restaurante y (si es a domicilio) todos los repartidores |
+| El panel cambia el estado | cliente, restaurante, repartidor asignado y (si es a domicilio) todos los repartidores |
+| Un repartidor toma o suelta | cliente, restaurante, el repartidor y todos los repartidores |
+| En camino / entregado | cliente, restaurante y el repartidor asignado |
+
+Los avisos viajan en memoria (`InMemoryChannelLayer`): funciona con un solo proceso de servidor. Para varios procesos, cambiar a Redis (`channels_redis`).

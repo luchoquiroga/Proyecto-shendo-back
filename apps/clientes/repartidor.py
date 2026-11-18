@@ -14,6 +14,7 @@ from rest_framework.response import Response
 
 from apps.core.models import Pagos, Pedidos, Repartidor
 from .auth import get_cliente_from_token, repartidor_json
+from .avisos import avisar_pedido
 from .views import ClienteAPIView, error, pedidos_json, texto
 
 EN_CAMINO = 'en camino'
@@ -123,7 +124,9 @@ class TomarView(ClienteAPIView):
         )
         if tomados == 0:
             return error('El pedido ya no está disponible', status.HTTP_409_CONFLICT)
-        return Response(entregas_json(pedidos_query().filter(pk=id_pedido), con_cliente=True)[0])
+        pedido = pedidos_query().get(pk=id_pedido)
+        avisar_pedido(pedido, repartidores=True)
+        return Response(entregas_json([pedido], con_cliente=True)[0])
 
 
 class SoltarView(ClienteAPIView):
@@ -138,6 +141,7 @@ class SoltarView(ClienteAPIView):
         )
         if soltados == 0:
             return error('No podés soltar este pedido', status.HTTP_409_CONFLICT)
+        avisar_pedido(Pedidos.objects.get(pk=id_pedido), repartidores=True, tambien_repartidor=repartidor.id_repartidor)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -165,4 +169,5 @@ class EstadoPedidoView(ClienteAPIView):
         if nuevo == ENTREGADO:
             # Se paga al recibir: al entregar, el pago queda cobrado.
             Pagos.objects.filter(id_pedido=pedido, estado_pago=False).update(estado_pago=True, fecha_pago=timezone.now())
+        avisar_pedido(pedido)  # los demás repartidores no: no cambia la lista de disponibles
         return Response(entregas_json(pedidos_query().filter(pk=id_pedido), con_cliente=True)[0])

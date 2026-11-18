@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 from apps.core.models import Categoria, DetallePedido, HorariosRestaurante, Pagos, Pedidos, Productos, Repartidor, Restaurantes, Usuarios
 from apps.core.cuerpo import CuerpoObjetoMixin
 from .auth import renovar, requiere_cliente, sesion, tokens
+from .avisos import avisar_pedido
 
 # Endpoints de la app mobile de clientes (la persona que hace el pedido).
 # El panel del restaurante sigue en apps/core; esto no lo toca.
@@ -558,5 +559,6 @@ class MisPedidosView(ClienteAPIView):
             )
             return error(f'No hay stock suficiente de "{e.producto.nombre}" (quedan {quedan or 0})')
 
+        avisar_pedido(pedido, repartidores=pedido.tipo_entrega == 'domicilio')
         creado = pedidos_json(pedidos_de(pk=pedido.id_pedido))[0]
         return Response(creado, status=status.HTTP_201_CREATED)

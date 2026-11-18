@@ -18,6 +18,7 @@ ALLOWED_HOSTS = ['.localhost', '127.0.0.1', '[::1]', '10.0.2.2'] + [
 ]
 
 INSTALLED_APPS = [
+    'daphne',  # primero: hace que runserver sirva ASGI (HTTP + WebSocket)
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -28,6 +29,7 @@ INSTALLED_APPS = [
     'apps.clientes',
     'corsheaders',
     'rest_framework',
+    'channels',
 ]
 
 MIDDLEWARE = [
@@ -59,6 +61,10 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
+
+# Avisos por WebSocket: en memoria, sirve con un solo proceso. Con varios procesos usar Redis (channels_redis).
+CHANNEL_LAYERS = {'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}}
 
 REST_FRAMEWORK = {
     # Si se despliega detrás de un proxy, poner acá cuántos hay (si no, X-Forwarded-For evade el throttling).
