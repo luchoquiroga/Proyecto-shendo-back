@@ -31,9 +31,9 @@ class AvisosBase(TransactionTestCase):
         self.ana = self.usuario('ana@mail.com')
         self.beto = self.usuario('beto@mail.com')
         self.juan = self.usuario('juan@mail.com')
-        self.rep_juan = Repartidor.objects.create(nombre='Juan', disponible=True, id_usuario=self.juan)
+        self.rep_juan = Repartidor.objects.create(nombre='Juan', estado='disponible', id_usuario=self.juan)
         self.pepe = self.usuario('pepe@mail.com')
-        self.rep_pepe = Repartidor.objects.create(nombre='Pepe', disponible=True, id_usuario=self.pepe)
+        self.rep_pepe = Repartidor.objects.create(nombre='Pepe', estado='disponible', id_usuario=self.pepe)
         Usuarios.objects.create(nombre='admin', email='admin@a.com', telefono='1', contrasena=HASH_SECRETO,
                                 rol=True, id_restaurante=self.resto)
         self.token_panel = APIClient().post('/api/login/', {'nombre': 'admin', 'contrasena': 'secreto123'},
@@ -57,7 +57,7 @@ class AvisosBase(TransactionTestCase):
         self.assertEqual(codigo, 4401)
 
     def pedido(self, usuario=None, repartidor=None, estado='pendiente'):
-        return Pedidos.objects.create(fecha=timezone.now(), estado=estado, total=1000, direccion_entega='Calle 1',
+        return Pedidos.objects.create(fecha=timezone.now(), estado=estado, total=1000, direccion_entrega='Calle 1',
                                       tipo_entrega='domicilio', id_usuario=usuario or self.ana,
                                       id_restaurante=self.resto, id_repartidor=repartidor)
 

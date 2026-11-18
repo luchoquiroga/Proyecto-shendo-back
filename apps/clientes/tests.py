@@ -259,7 +259,7 @@ class PedidosTest(ClienteTest):
         self.assertEqual(pedido.id_usuario_id, self.cliente.id_usuario)
         self.assertEqual(pedido.estado, 'pendiente')
         pago = Pagos.objects.get()
-        self.assertEqual((pago.metodo_pago, pago.monto, pago.estado_pago), ('efectivo', 17000.0, False))
+        self.assertEqual((pago.metodo_pago, pago.monto, pago.estado_pago), ('efectivo', 17000.0, 'pendiente'))
 
         listado = self.client.get(self.URL)
         self.assertEqual(listado.data, [r.data])
@@ -319,8 +319,8 @@ class PedidosTest(ClienteTest):
         nuevo = Pedidos.objects.create(fecha=ahora, estado='en camino', total=10.0,
                                        id_usuario=self.cliente, id_restaurante=self.rest)
         Pedidos.objects.create(fecha=ahora, estado='pendiente', id_usuario=otro, id_restaurante=self.rest)
-        DetallePedido.objects.create(id_pedido=nuevo, id_producto=None, cantidad=2.0, subtotal=None)
-        Pagos.objects.create(id_pedido=nuevo, metodo_pago='transferencia', monto=10.0, estado_pago=True)
+        DetallePedido.objects.create(id_pedido=nuevo, id_producto=None, cantidad=2, precio_unitario=None)
+        Pagos.objects.create(id_pedido=nuevo, metodo_pago='transferencia', monto=10.0, estado_pago='pagado')
 
         r = self.client.get(self.URL)
         self.assertEqual([p['id_pedido'] for p in r.data], [nuevo.id_pedido, viejo.id_pedido])
@@ -484,7 +484,7 @@ class EnvioYRetiroTest(ClienteTest):
                          ('retiro', 0.0, 2000.0))
         self.assertIsNone(r.data['direccion_entrega'])
         pedido = Pedidos.objects.get()
-        self.assertEqual((pedido.tipo_entrega, pedido.direccion_entega), ('retiro', None))
+        self.assertEqual((pedido.tipo_entrega, pedido.direccion_entrega), ('retiro', None))
         self.assertEqual(Pagos.objects.get().monto, 2000.0)
 
     def test_retiro_ignora_direccion_enviada(self):

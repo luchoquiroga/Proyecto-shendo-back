@@ -101,10 +101,10 @@ class Base(APITestCase):
                                        contrasena=HASH_SECRETO, rol=rol, id_restaurante=rest)
 
     def pedido(self, usuario=None, rest=None, estado='pendiente', tipo='domicilio', repartidor=None):
-        p = Pedidos.objects.create(fecha=timezone.now(), estado=estado, total=1500, direccion_entega='Calle Secreta 9',
+        p = Pedidos.objects.create(fecha=timezone.now(), estado=estado, total=1500, direccion_entrega='Calle Secreta 9',
                                    tipo_entrega=tipo, id_usuario=usuario or self.ana,
                                    id_restaurante=rest or self.rest_a, id_repartidor=repartidor)
-        Pagos.objects.create(id_pedido=p, metodo_pago='efectivo', monto=1500, estado_pago=False)
+        Pagos.objects.create(id_pedido=p, metodo_pago='efectivo', monto=1500, estado_pago='pendiente')
         return p
 
     def foto(self):
@@ -351,7 +351,7 @@ class IdorClienteTest(Base):
         self.assertEqual(r.status_code, 201, r.content)
         p = Pedidos.objects.get()
         self.assertEqual((p.id_usuario_id, p.estado, p.id_repartidor_id, p.total), (self.ana.pk, 'pendiente', None, 1800.0))
-        self.assertIs(Pagos.objects.get().estado_pago, False)
+        self.assertEqual(Pagos.objects.get().estado_pago, 'pendiente')
         self.assertEqual(Pagos.objects.get().monto, 1800.0)
 
     def test_patch_perfil_ignora_id_usuario_del_body(self):
@@ -633,7 +633,7 @@ class MassAssignmentTest(Base):
         for valor in ['true', 'false', 1, 0, None, [], {}, 'yes']:
             r = self.client.patch(R + 'estado/', {'disponible': valor}, format='json')
             self.assertEqual(r.status_code, 400, valor)
-        self.assertIs(Repartidor.objects.get().disponible, False)
+        self.assertEqual(Repartidor.objects.get().estado, 'desconectado')
 
     def test_vehiculo_invalido_no_se_guarda(self):
         self.nuevo_repartidor()
@@ -783,7 +783,7 @@ class ManipulacionDePedidosTest(Base):
                 self.assertRechazado(self.pedir(direccion_entrega=valor))
 
     # BUG: views.py:450 acepta direccion_entrega de cualquier largo (el perfil sí limita a 255, registro no limita).
-    # Un POST con 1 MB de dirección se guarda tal cual en pedidos.direccion_entega (y se lista a repartidores y panel).
+    # Un POST con 1 MB de dirección se guarda tal cual en pedidos.direccion_entrega (y se lista a repartidores y panel).
     def test_direccion_gigante_se_rechaza(self):
         self.assertEqual(self.pedir(direccion_entrega='x' * 100_000).status_code, 400)
 
@@ -864,7 +864,7 @@ class FlujoRepartidorTest(Base):
         r = self.estado(p, 'entregado')
         self.assertEqual(r.status_code, 409)
         self.assertEqual(self.pedido_db(p).estado, 'pendiente')
-        self.assertIs(Pagos.objects.get().estado_pago, False)
+        self.assertEqual(Pagos.objects.get().estado_pago, 'pendiente')
 
     def test_en_camino_dos_veces(self):
         p = self.pedido()
@@ -966,8 +966,6 @@ class FlujoRepartidorTest(Base):
         antes = self.foto()
         self.assertEqual(self.tomar(p).status_code, 409)
         self.assertEqual(self.foto(), antes)
-        Repartidor.objects.update(disponible=None)
-        self.assertEqual(self.tomar(p).status_code, 409)
         self.assertIsNone(self.pedido_db(p).id_repartidor_id)
 
     def test_tomar_pedido_inexistente_o_con_id_enorme(self):

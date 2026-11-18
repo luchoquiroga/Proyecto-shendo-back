@@ -65,7 +65,7 @@ Los horarios del local se cargan desde el admin de Django (`/admin/`).
 
 | Método | Ruta | Auth | Body / notas |
 |---|---|---|---|
-| POST | `registro/` | — | `{nombre, email, telefono, contrasena, direccion?, repartidor?: true, vehiculo?}` → sesión (`access`, `refresh`, datos, `perfil`). Con `repartidor: true` el vehículo es requerido |
+| POST | `registro/` | — | `{nombre, email, telefono, contrasena, direccion?, repartidor?: true, vehiculo?, patente?}` → sesión (`access`, `refresh`, datos, `perfil`). Con `repartidor: true` el vehículo es requerido; `patente` opcional (hasta 15) |
 | POST | `login/` | — | `{email, contrasena}` → sesión |
 | POST | `token/refresh/` | — | `{refresh}` → `{access}` |
 | GET / PATCH | `perfil/` | cliente | PATCH parcial: `nombre`, `telefono`, `direccion`; para cambiar la contraseña `contrasena_actual` + `contrasena_nueva`. El email no se cambia. Si cambia la contraseña, la respuesta trae además `access` y `refresh` nuevos (los anteriores dejan de valer: guardarlos) |
@@ -78,16 +78,16 @@ Cada pedido trae `repartidor: {nombre, telefono, vehiculo}` cuando alguien lo to
 
 ## App de repartidores (`/api/repartidor/`)
 
-Es la misma app con otra cara. Mismo registro, login, refresh y perfil que el cliente (`/api/cliente/...`). La sesión trae `perfil: "cliente" | "repartidor"` y, si es repartidor, `repartidor: {id_repartidor, vehiculo, disponible}`. Todo lo de abajo requiere token de una cuenta de repartidor: sin token → `401`, cuenta de cliente → `403`.
+Es la misma app con otra cara. Mismo registro, login, refresh y perfil que el cliente (`/api/cliente/...`). La sesión trae `perfil: "cliente" | "repartidor"` y, si es repartidor, `repartidor: {id_repartidor, vehiculo, patente, estado, disponible}`. `estado` es `disponible` / `ocupado` (tiene pedidos en curso, puede tomar más) / `desconectado`; `disponible` = no está desconectado. Todo lo de abajo requiere token de una cuenta de repartidor: sin token → `401`, cuenta de cliente → `403`.
 
 Flujo: el restaurante maneja `pendiente → preparando → listo` desde el panel. El repartidor ve los pedidos a domicilio sin repartidor y no terminados, **toma** uno, lo pasa a **en camino** cuando lo retira y a **entregado** cuando lo entrega. Al entregar, el pago queda cobrado.
 
 | Método | Ruta | Body / notas |
 |---|---|---|
-| GET / PATCH | `estado/` | Mis datos. PATCH parcial: `disponible` (bool), `vehiculo` |
+| GET / PATCH | `estado/` | Mis datos. PATCH parcial: `disponible` (bool: prende/apaga; `ocupado` lo pone el back), `vehiculo`, `patente` |
 | GET | `disponibles/` | Pedidos para tomar (más viejo primero), con dirección y teléfono del restaurante. Sin datos del cliente: de la entrega solo la calle, sin altura (la dirección completa, al tomarlo) |
 | GET | `pedidos/` | Mis entregas: activas primero, después el historial. Incluyen `cliente: {nombre, telefono}` |
-| POST | `pedidos/<id>/tomar/` | Hay que estar `disponible`. Si otro lo tomó antes → `409` |
+| POST | `pedidos/<id>/tomar/` | Hay que no estar `desconectado`. Si otro lo tomó antes → `409` |
 | POST | `pedidos/<id>/soltar/` | Lo devuelve a disponibles (solo si todavía no está en camino) |
 | POST | `pedidos/<id>/estado/` | `{estado: "en camino" \| "entregado"}`. `entregado` solo desde `en camino` |
 

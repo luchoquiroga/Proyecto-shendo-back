@@ -92,7 +92,7 @@ class Categoria(models.Model):
 class DetallePedido(models.Model):
     id_detalle = models.BigAutoField(primary_key=True)
     cantidad = models.IntegerField()
-    subtotal = models.FloatField(blank=True, null=True)
+    precio_unitario = models.FloatField(blank=True, null=True)  # precio del producto al momento de la compra
     id_pedido = models.ForeignKey('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
     id_producto = models.ForeignKey('Productos', models.DO_NOTHING, db_column='id_producto', blank=True, null=True)
 
@@ -151,7 +151,7 @@ class Pagos(models.Model):
     id_pago = models.BigAutoField(primary_key=True)
     metodo_pago = models.TextField()
     monto = models.FloatField(blank=True, null=True)
-    estado_pago = models.BooleanField(blank=True, null=True)
+    estado_pago = models.TextField(default='pendiente')  # CHECK en la base: 'pendiente' | 'pagado'
     fecha_pago = models.DateTimeField(blank=True, null=True)  # en la base es timestamptz
     # UNIQUE en la base: un pago por pedido.
     id_pedido = models.OneToOneField('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
@@ -166,7 +166,7 @@ class Pedidos(models.Model):
     fecha = models.DateTimeField()
     estado = models.TextField(blank=True, null=True)  # en la base es text ('pendiente', ...)
     total = models.FloatField(blank=True, null=True)
-    direccion_entega = models.CharField(blank=True, null=True)
+    direccion_entrega = models.CharField(blank=True, null=True)
     tipo_entrega = models.TextField(default='domicilio')  # CHECK en la base: 'domicilio' | 'retiro'
     id_usuario = models.ForeignKey('Usuarios', models.DO_NOTHING, db_column='id_usuario', blank=True, null=True)
     id_restaurante = models.ForeignKey('Restaurantes', models.DO_NOTHING, db_column='id_restaurante', blank=True, null=True)
@@ -201,7 +201,8 @@ class Repartidor(models.Model):
     nombre = models.CharField()
     telefono = models.CharField(blank=True, null=True)  # en la base es varchar
     vehiculo = models.CharField(blank=True, null=True)
-    disponible = models.BooleanField(blank=True, null=True)
+    patente = models.CharField(blank=True, null=True)
+    estado = models.TextField(default='desconectado')  # CHECK en la base: 'disponible' | 'ocupado' | 'desconectado'
     # Agregada 2026-11-18 (UNIQUE en la base): la cuenta con la que el repartidor entra a la app.
     id_usuario = models.OneToOneField('Usuarios', models.DO_NOTHING, db_column='id_usuario', blank=True, null=True,
                                       related_name='repartidor')

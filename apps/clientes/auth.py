@@ -20,11 +20,17 @@ class ClienteRefreshToken(RefreshToken):
     access_token_class = ClienteAccessToken
 
 
+DESCONECTADO = 'desconectado'
+
+
 def repartidor_json(repartidor):
     return {
         'id_repartidor': repartidor.id_repartidor,
         'vehiculo': repartidor.vehiculo,
-        'disponible': bool(repartidor.disponible),
+        'patente': repartidor.patente,
+        'estado': repartidor.estado,
+        # La app solo prende/apaga: "ocupado" (con pedidos en curso) sigue pudiendo tomar más.
+        'disponible': repartidor.estado != DESCONECTADO,
     }
 
 

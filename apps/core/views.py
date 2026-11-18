@@ -249,7 +249,7 @@ class PedidosView(CuerpoObjetoMixin, APIView):
                 "fecha": p.fecha,
                 "estado": p.estado if p.estado is not None else 0,
                 "total": float(p.total) if p.total else 0,
-                "direccion_entega": p.direccion_entega,
+                "direccion_entega": p.direccion_entrega,  # (sic) clave que ya consume el panel
                 "id_usuario": p.id_usuario_id,
                 "tipo_entrega": p.tipo_entrega,
                 "repartidor": p.id_repartidor.nombre if p.id_repartidor else None,

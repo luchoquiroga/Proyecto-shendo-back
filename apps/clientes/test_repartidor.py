@@ -28,9 +28,9 @@ class RepartidorTest(APITestCase):
         return r.data
 
     def pedido(self, tipo='domicilio', estado='pendiente'):
-        p = Pedidos.objects.create(fecha=timezone.now(), estado=estado, total=1500, direccion_entega='Calle 9',
+        p = Pedidos.objects.create(fecha=timezone.now(), estado=estado, total=1500, direccion_entrega='Calle 9',
                                    tipo_entrega=tipo, id_usuario=self.cliente, id_restaurante=self.resto)
-        Pagos.objects.create(id_pedido=p, metodo_pago='efectivo', monto=1500, estado_pago=False)
+        Pagos.objects.create(id_pedido=p, metodo_pago='efectivo', monto=1500, estado_pago='pendiente')
         return p
 
 
@@ -110,7 +110,7 @@ class FlujoTest(RepartidorTest):
         self.pedido(tipo='retiro')
         self.pedido(estado='Entregado')
         self.pedido(estado='cancelado')
-        otro = Repartidor.objects.create(nombre='Otro', disponible=True)
+        otro = Repartidor.objects.create(nombre='Otro', estado='disponible')
         tomado = self.pedido()
         tomado.id_repartidor = otro
         tomado.save()
@@ -120,7 +120,7 @@ class FlujoTest(RepartidorTest):
 
     def test_pedido_ajeno(self):
         p = self.pedido()
-        otro = Repartidor.objects.create(nombre='Otro', disponible=True)
+        otro = Repartidor.objects.create(nombre='Otro', estado='disponible')
         p.id_repartidor = otro
         p.save()
         self.entrar()
@@ -150,6 +150,47 @@ class FlujoTest(RepartidorTest):
             self.assertEqual(self.client.patch(R + 'estado/', malo, format='json').status_code, 400, malo)
 
 
+class EstadoYPatenteTest(RepartidorTest):
+
+    def estado(self):
+        return self.client.get(R + 'estado/').data['estado']
+
+    def test_ocupado_mientras_tiene_pedidos_en_curso(self):
+        self.entrar()
+        a, b = self.pedido(), self.pedido()
+        self.assertEqual(self.estado(), 'disponible')
+        self.client.post(R + f'pedidos/{a.pk}/tomar/')
+        self.assertEqual(self.client.post(R + f'pedidos/{b.pk}/tomar/').status_code, 200)  # ocupado puede tomar más
+        self.assertEqual(self.estado(), 'ocupado')
+        self.client.post(R + f'pedidos/{b.pk}/soltar/')
+        self.assertEqual(self.estado(), 'ocupado')  # le queda a
+        self.client.post(R + f'pedidos/{a.pk}/estado/', {'estado': 'en camino'}, format='json')
+        self.assertEqual(self.estado(), 'ocupado')
+        self.client.post(R + f'pedidos/{a.pk}/estado/', {'estado': 'entregado'}, format='json')
+        self.assertEqual(self.estado(), 'disponible')
+        self.assertEqual(Pagos.objects.get(id_pedido=a).estado_pago, 'pagado')
+
+    def test_desconectado_no_cambia_al_entregar(self):
+        self.entrar()
+        p = self.pedido()
+        self.client.post(R + f'pedidos/{p.pk}/tomar/')
+        r = self.client.patch(R + 'estado/', {'disponible': False}, format='json')
+        self.assertEqual((r.data['estado'], r.data['disponible']), ('desconectado', False))
+        self.client.post(R + f'pedidos/{p.pk}/estado/', {'estado': 'en camino'}, format='json')
+        self.client.post(R + f'pedidos/{p.pk}/estado/', {'estado': 'entregado'}, format='json')
+        self.assertEqual(self.estado(), 'desconectado')
+        r = self.client.patch(R + 'estado/', {'disponible': True}, format='json')
+        self.assertEqual(r.data['estado'], 'disponible')
+
+    def test_patente_en_registro_y_edicion(self):
+        r = self.registrar(patente=' AB123CD ')
+        self.assertEqual(r.data['repartidor']['patente'], 'AB123CD')
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + r.data['access'])
+        self.assertEqual(self.client.patch(R + 'estado/', {'patente': 'X' * 16}, format='json').status_code, 400)
+        self.assertIsNone(self.client.patch(R + 'estado/', {'patente': ''}, format='json').data['patente'])
+        self.assertEqual(self.registrar('otro@mail.com', patente='X' * 16).status_code, 400)
+
+
 class SoloCalleTest(RepartidorTest):
 
     def test_solo_calle(self):
@@ -167,8 +208,8 @@ class SoloCalleTest(RepartidorTest):
             self.assertEqual(solo_calle(entrada), esperado, entrada)
 
     def test_disponibles_muestra_solo_la_calle_y_al_tomarlo_la_completa(self):
-        p = self.pedido()  # direccion_entega = 'Calle 9'
-        Pedidos.objects.filter(pk=p.pk).update(direccion_entega='Av. Siempreviva 742')
+        p = self.pedido()  # direccion_entrega = 'Calle 9'
+        Pedidos.objects.filter(pk=p.pk).update(direccion_entrega='Av. Siempreviva 742')
         self.entrar()
         self.assertEqual(self.client.get(R + 'disponibles/').data[0]['direccion_entrega'], 'Av. Siempreviva')
         r = self.client.post(R + f'pedidos/{p.pk}/tomar/')

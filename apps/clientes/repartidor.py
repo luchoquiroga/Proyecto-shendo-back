@@ -14,7 +14,7 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from apps.core.models import Pagos, Pedidos, Repartidor
-from .auth import get_cliente_from_token, repartidor_json
+from .auth import DESCONECTADO, get_cliente_from_token, repartidor_json
 from .avisos import avisar_pedido
 from .views import ClienteAPIView, error, pedidos_json, texto
 
@@ -22,6 +22,11 @@ EN_CAMINO = 'en camino'
 ENTREGADO = 'entregado'
 # Estados en los que el pedido ya no se puede tomar (el estado es texto libre: se compara sin mayúsculas).
 TERMINADOS = (EN_CAMINO, ENTREGADO, 'cancelado', 'rechazado')
+
+
+DISPONIBLE = 'disponible'
+OCUPADO = 'ocupado'
+CERRADOS = (ENTREGADO, 'cancelado', 'rechazado')
 
 
 def estado_es(estado, *valores):
@@ -72,12 +77,27 @@ def entregas_json(pedidos, con_cliente):
     return data
 
 
+def actualizar_ocupado(repartidor):
+    """disponible <-> ocupado según tenga pedidos en curso. Si está desconectado no se toca."""
+    if repartidor.estado == DESCONECTADO:
+        return
+    en_curso = (
+        Pedidos.objects.filter(id_repartidor=repartidor)
+        .exclude(estado__iregex=r'^\s*(' + '|'.join(CERRADOS) + r')\s*$')
+        .exists()
+    )
+    nuevo = OCUPADO if en_curso else DISPONIBLE
+    if repartidor.estado != nuevo:
+        repartidor.estado = nuevo
+        repartidor.save(update_fields=['estado'])
+
+
 def pedidos_query():
     return Pedidos.objects.select_related('id_restaurante', 'id_usuario', 'id_repartidor__id_usuario')
 
 
 class EstadoView(ClienteAPIView):
-    """GET: mis datos de repartidor. PATCH: {disponible: bool, vehiculo: str} (parcial)."""
+    """GET: mis datos de repartidor. PATCH: {disponible: bool, vehiculo: str, patente: str} (parcial)."""
 
     @requiere_repartidor
     def get(self, request, repartidor):
@@ -88,13 +108,20 @@ class EstadoView(ClienteAPIView):
         if 'disponible' in request.data:
             if not isinstance(request.data['disponible'], bool):
                 return error('disponible tiene que ser true o false')
-            repartidor.disponible = request.data['disponible']
+            # true queda disponible u ocupado (actualizar_ocupado de abajo); false, desconectado.
+            repartidor.estado = DISPONIBLE if request.data['disponible'] else DESCONECTADO
         if 'vehiculo' in request.data:
             vehiculo = texto(request.data['vehiculo'])
             if not vehiculo or len(vehiculo) > 50:
                 return error('El vehículo es requerido (hasta 50 caracteres)')
             repartidor.vehiculo = vehiculo
+        if 'patente' in request.data:
+            patente = texto(request.data['patente'])
+            if len(patente) > 15:
+                return error('La patente puede tener hasta 15 caracteres')
+            repartidor.patente = patente or None
         repartidor.save()
+        actualizar_ocupado(repartidor)
         return Response(repartidor_json(repartidor))
 
 
@@ -125,7 +152,7 @@ class TomarView(ClienteAPIView):
 
     @requiere_repartidor
     def post(self, request, repartidor, id_pedido):
-        if not repartidor.disponible:
+        if repartidor.estado == DESCONECTADO:
             return error('Activá tu disponibilidad para tomar pedidos', status.HTTP_409_CONFLICT)
         # shortcut: no hay límite de pedidos activos por repartidor; agregarlo si hace falta.
         # UPDATE condicional: si dos repartidores lo toman a la vez, solo uno se lo lleva.
@@ -136,6 +163,7 @@ class TomarView(ClienteAPIView):
         )
         if tomados == 0:
             return error('El pedido ya no está disponible', status.HTTP_409_CONFLICT)
+        actualizar_ocupado(repartidor)
         pedido = pedidos_query().get(pk=id_pedido)
         avisar_pedido(pedido, repartidores=True)
         return Response(entregas_json([pedido], con_cliente=True)[0])
@@ -153,6 +181,7 @@ class SoltarView(ClienteAPIView):
         )
         if soltados == 0:
             return error('No podés soltar este pedido', status.HTTP_409_CONFLICT)
+        actualizar_ocupado(repartidor)
         avisar_pedido(Pedidos.objects.get(pk=id_pedido), repartidores=True, tambien_repartidor=repartidor.id_repartidor)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -180,6 +209,7 @@ class EstadoPedidoView(ClienteAPIView):
         pedido.save(update_fields=['estado'])
         if nuevo == ENTREGADO:
             # Se paga al recibir: al entregar, el pago queda cobrado.
-            Pagos.objects.filter(id_pedido=pedido, estado_pago=False).update(estado_pago=True, fecha_pago=timezone.now())
+            Pagos.objects.filter(id_pedido=pedido, estado_pago='pendiente').update(estado_pago='pagado', fecha_pago=timezone.now())
+            actualizar_ocupado(repartidor)
         avisar_pedido(pedido)  # los demás repartidores no: no cambia la lista de disponibles
         return Response(entregas_json(pedidos_query().filter(pk=id_pedido), con_cliente=True)[0])

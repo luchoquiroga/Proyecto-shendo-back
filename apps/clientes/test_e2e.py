@@ -88,7 +88,7 @@ class CicloCompletoTest(APITestCase):
         self.assertEqual(rep.get('/api/repartidor/disponibles/').data, [])
         self.assertEqual([m['estado'] for m in rep.get('/api/repartidor/pedidos/').data], ['entregado'])
         self.assertEqual(panel.get('/api/orders/').data[0]['estado'], 'entregado')
-        self.assertTrue(Pagos.objects.get(id_pedido=id_pedido).estado_pago)
+        self.assertEqual(Pagos.objects.get(id_pedido=id_pedido).estado_pago, 'pagado')
 
     def test_token_vencido_se_renueva_con_refresh(self):
         # Lo que hace la app ante un 401: pide un access nuevo con el refresh y reintenta.

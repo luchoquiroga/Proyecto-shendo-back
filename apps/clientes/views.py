@@ -177,6 +177,9 @@ class RegistroView(ClienteAPIView):
             return error('El vehículo es requerido para repartidores')
         if len(vehiculo) > 50:
             return error('El vehículo es demasiado largo')
+        patente = texto(request.data.get('patente'))
+        if len(patente) > 15:
+            return error('La patente es demasiado larga')
 
         with transaction.atomic():
             usuario = Usuarios.objects.create(
@@ -189,8 +192,8 @@ class RegistroView(ClienteAPIView):
             )
             if es_repartidor:
                 Repartidor.objects.create(
-                    nombre=nombre, telefono=telefono, vehiculo=vehiculo,
-                    disponible=False,  # arranca no disponible; lo prende desde la app
+                    nombre=nombre, telefono=telefono, vehiculo=vehiculo, patente=patente or None,
+                    estado='desconectado',  # arranca no disponible; lo prende desde la app
                     id_usuario=usuario,
                 )
         return Response(sesion(usuario), status=status.HTTP_201_CREATED)
@@ -408,7 +411,7 @@ def pedidos_json(pedidos):
         items.setdefault(d.id_pedido_id, []).append({
             'nombre': d.id_producto.nombre if d.id_producto else 'Producto eliminado',
             'cantidad': int(d.cantidad),
-            'subtotal': float(d.subtotal) if d.subtotal is not None else 0.0,
+            'subtotal': round(float(d.precio_unitario or 0) * d.cantidad, 2),
         })
 
     pagos = {pago.id_pedido_id: pago for pago in Pagos.objects.filter(id_pedido__in=ids)}
@@ -427,10 +430,10 @@ def pedidos_json(pedidos):
             'total': total,
             'tipo_entrega': p.tipo_entrega or 'domicilio',
             'costo_envio': envio,
-            'direccion_entrega': p.direccion_entega,  # (sic) la columna se llama así
+            'direccion_entrega': p.direccion_entrega,
             'restaurante': p.id_restaurante.nombre if p.id_restaurante else None,
             'metodo_pago': METODOS_PAGO.get(pago.metodo_pago, pago.metodo_pago) if pago else None,
-            'pagado': bool(pago and pago.estado_pago),
+            'pagado': bool(pago and pago.estado_pago == 'pagado'),
             'repartidor': repartidor_publico(p.id_repartidor),
             'items': lineas,
         })
@@ -531,24 +534,24 @@ class MisPedidosView(ClienteAPIView):
                     fecha=timezone.now(),
                     estado='pendiente',
                     total=total,
-                    direccion_entega=None if retiro else direccion,
+                    direccion_entrega=None if retiro else direccion,
                     tipo_entrega=tipo_entrega,
                     id_usuario_id=id_usuario,
                     id_restaurante=restaurante,
                 )
-                for producto, cantidad, subtotal in lineas:
+                for producto, cantidad, _ in lineas:
                     DetallePedido.objects.create(
                         id_pedido=pedido,
                         id_producto=producto,
                         cantidad=cantidad,
-                        subtotal=subtotal,
+                        precio_unitario=float(producto.precio or 0),
                     )
                 # Se paga al recibir: queda registrado cómo, sin cobrar.
                 Pagos.objects.create(
                     id_pedido=pedido,
                     metodo_pago=metodo_pago,
                     monto=total,
-                    estado_pago=False,
+                    estado_pago='pendiente',
                 )
         except SinStock as e:
             quedan = (
