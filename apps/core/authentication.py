@@ -45,3 +45,7 @@ class CustomJWTAuthentication(BaseAuthentication):
             return (user, token)
         except (InvalidToken, TokenError):
             raise AuthenticationFailed('Token inválido o expirado.')
+
+    def authenticate_header(self, request):
+        # Sin esto DRF responde 403 en vez de 401 cuando el token es inválido o venció.
+        return 'Bearer'

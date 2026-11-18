@@ -68,7 +68,7 @@ Los horarios del local se cargan desde el admin de Django (`/admin/`).
 | POST | `registro/` | — | `{nombre, email, telefono, contrasena, direccion?, repartidor?: true, vehiculo?}` → sesión (`access`, `refresh`, datos, `perfil`). Con `repartidor: true` el vehículo es requerido |
 | POST | `login/` | — | `{email, contrasena}` → sesión |
 | POST | `token/refresh/` | — | `{refresh}` → `{access}` |
-| GET / PATCH | `perfil/` | cliente | PATCH parcial: `nombre`, `telefono`, `direccion`; para cambiar la contraseña `contrasena_actual` + `contrasena_nueva`. El email no se cambia |
+| GET / PATCH | `perfil/` | cliente | PATCH parcial: `nombre`, `telefono`, `direccion`; para cambiar la contraseña `contrasena_actual` + `contrasena_nueva`. El email no se cambia. Si cambia la contraseña, la respuesta trae además `access` y `refresh` nuevos (los anteriores dejan de valer: guardarlos) |
 | GET | `restaurantes/` | — | Locales con `costo_envio`, `pedido_minimo`, `horario_hoy`, `abierto`, categorías |
 | GET | `restaurantes/<id>/productos/` | — | Menú (solo disponibles), `imagen_url` absoluta |
 | GET | `pedidos/` | cliente | Mis pedidos, del más nuevo al más viejo |

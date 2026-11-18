@@ -8,7 +8,27 @@ from .models import Productos, Usuarios, Pedidos, Categoria, Restaurantes
 from django.contrib.auth.hashers import check_password, identify_hasher, make_password
 from django.core.files.storage import default_storage
 from rest_framework.permissions import IsAuthenticated
+import math
+import uuid
+
+from PIL import Image
+
+from .cuerpo import CuerpoObjetoMixin
 from .permissions import IsRestaurantStaffOrReadOnly, IsOrderParticipantOnly
+
+FORMATOS_IMAGEN = {'JPEG': '.jpg', 'PNG': '.png', 'WEBP': '.webp', 'GIF': '.gif', 'AVIF': '.avif'}
+
+
+def numero_valido(valor):
+    """float finito a partir de un número o un texto numérico; None si no lo es (bool, nan, lista...)."""
+    if isinstance(valor, bool) or not isinstance(valor, (int, float, str)):
+        return None
+    try:
+        n = float(valor)
+    except (ValueError, OverflowError):
+        return None
+    return n if math.isfinite(n) else None
+
 
 #este DEF lo que hace es leer el token JWT del header de la peticion
 #y devuelve el id_restaurante que esta guardado dentro del token. 
@@ -21,7 +41,10 @@ def get_restaurante_from_token(request):
     if not auth_header.startswith('Bearer '): #bearer: formato estandar para enviar tokens en el header
         return None                           # para evitar problemas de seguridad.
     
-    token_str = auth_header.split(' ')[1] #extrae el token del header, que viene después de "Bearer "
+    partes = auth_header.split(' ')
+    if len(partes) != 2:  # "Bearer <token> basura" no es válido
+        return None
+    token_str = partes[1] #extrae el token del header, que viene después de "Bearer "
     try:
         from rest_framework_simplejwt.tokens import AccessToken 
         #importamos AccessToken para decodificar el token y obtener el id_restaurante
@@ -46,7 +69,7 @@ def contrasena_valida(usuario, contrasena):
     return check_password(contrasena, guardada)
 
 
-class LoginView(APIView):
+class LoginView(CuerpoObjetoMixin, APIView):
     throttle_scope = 'login'
 
     def post(self, request):
@@ -97,7 +120,7 @@ class LoginView(APIView):
 # PRODUCTOS: solo se puede acceder a este panel si el token válido, para que muestre
 # los productos del restaurante que corresponde al token. 
 # No se puede acceder a productos de otros restaurantes.
-class ProductosView(APIView):
+class ProductosView(CuerpoObjetoMixin, APIView):
 
     def get(self, request):
         #se lee el token y se obtiene el id_restaurante para filtrar los productos de ese restaurante
@@ -144,6 +167,26 @@ class ProductosView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if not isinstance(nombre, str) or not nombre.strip() or len(nombre.strip()) > 100:
+            return Response({'error': 'nombre es requerido (hasta 100 caracteres)'}, status=status.HTTP_400_BAD_REQUEST)
+        nombre = nombre.strip()
+
+        precio = numero_valido(precio)
+        if precio is None or not 0 < precio <= 10_000_000:
+            return Response({'error': 'precio tiene que ser un número mayor a 0'}, status=status.HTTP_400_BAD_REQUEST)
+
+        stock = request.data.get('stock', 0)
+        if stock is not None:
+            stock = numero_valido(stock)
+            # 32767 = límite de smallint en la base.
+            if stock is None or stock != int(stock) or not 0 <= stock <= 32767:
+                return Response({'error': 'stock tiene que ser un entero entre 0 y 32767'}, status=status.HTTP_400_BAD_REQUEST)
+            stock = int(stock)
+
+        descripcion = request.data.get('descripcion', '')
+        if not isinstance(descripcion, str):
+            return Response({'error': 'descripcion tiene que ser texto'}, status=status.HTTP_400_BAD_REQUEST)
+
         disponible =request.data.get('disponible', True)
         
         if isinstance(disponible, str):
@@ -154,17 +197,25 @@ class ProductosView(APIView):
 
         if 'imagen' in request.FILES:
             imagen = request.FILES['imagen']
-            ruta_imagen = default_storage.save(
-                f'productos/{imagen.name}',
-                imagen
-            )
+            # Solo imágenes reales (se sirven desde /media/ en el mismo origen que la API: un .html/.svg sería XSS).
+            # El nombre se genera: ni la extensión ni el nombre del usuario sirven.
+            try:
+                with Image.open(imagen) as img:
+                    formato = img.format
+                    img.verify()
+            except Exception:  # Pillow lanza de todo con archivos rotos
+                formato = None
+            if formato not in FORMATOS_IMAGEN:
+                return Response({'error': 'imagen tiene que ser JPEG, PNG, WEBP, GIF o AVIF'}, status=status.HTTP_400_BAD_REQUEST)
+            imagen.seek(0)
+            ruta_imagen = default_storage.save(f'productos/{uuid.uuid4().hex}{FORMATOS_IMAGEN[formato]}', imagen)
             imagen_url = f'/media/{ruta_imagen}'
 
         producto = Productos.objects.create(
             nombre=nombre,
             precio=precio,
-            descripcion=request.data.get('descripcion', ''),
-            stock=request.data.get('stock', 0),
+            descripcion=descripcion,
+            stock=stock,
             imagen_url=imagen_url,
             disponible=disponible,
             id_restaurante_id=id_restaurante,  # Viene del token, no del usuario
@@ -179,7 +230,7 @@ class ProductosView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 # PEDIDOS... Lo mismoq que productos
-class PedidosView(APIView):
+class PedidosView(CuerpoObjetoMixin, APIView):
 
     def get(self, request):
         id_restaurante = get_restaurante_from_token(request)
@@ -251,7 +302,7 @@ NOMBRE_INVALIDO = {'error': 'nombre es requerido (hasta 100 caracteres)'}
 
 
 # CATEGORÍAS: igual que productos, todo filtrado por el restaurante del token.
-class CategoriasView(APIView):
+class CategoriasView(CuerpoObjetoMixin, APIView):
 
     def get(self, request):
         id_restaurante = get_restaurante_from_token(request)
@@ -280,7 +331,7 @@ class CategoriasView(APIView):
         )
 
 
-class CategoriaDetailView(APIView):
+class CategoriaDetailView(CuerpoObjetoMixin, APIView):
 
     def categoria(self, request, categoria_id):
         """(categoria, None) si es del restaurante del token; si no, (None, respuesta de error)."""
@@ -339,7 +390,7 @@ def restaurante_json(r):
     }
 
 
-class RestauranteView(APIView):
+class RestauranteView(CuerpoObjetoMixin, APIView):
 
     def restaurante(self, request):
         id_restaurante = get_restaurante_from_token(request)

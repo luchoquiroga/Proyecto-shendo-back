@@ -312,7 +312,6 @@ class ConfusionDeTokensTest(Base):
 
     # BUG: apps/core/views.py:24 usa auth_header.split(' ')[1] sin exigir exactamente 2 partes: "Bearer <valido> basura"
     # se acepta en las vistas del panel (CustomJWTAuthentication sí lo rechaza). Inconsistente con el lado cliente.
-    @unittest.expectedFailure
     def test_panel_rechaza_header_con_partes_de_mas(self):
         access = self.login_panel()['access']
         r = self.client.get(P + 'orders/', HTTP_AUTHORIZATION='Bearer ' + access + ' basura')
@@ -322,7 +321,6 @@ class ConfusionDeTokensTest(Base):
     # authenticate_header(): DRF responde 403 (no 401) cuando el header lleva un token malo/vencido y la vista
     # usa el autenticador global (panel). API.md promete 401. (El caso "sin token" sí da 401 por la vista.)
     # El test anterior de vencido pasa porque get_restaurante_from_token corre antes... aquí se ve el 403 real.
-    @unittest.expectedFailure
     def test_panel_token_invalido_o_vencido_responde_401_y_no_403(self):
         for token in ('basura.que.no.es.jwt', panel_vencido(self.rest_a.pk)):
             self.con(token)
@@ -383,7 +381,6 @@ class IdorClienteTest(Base):
     # BUG: apps/clientes/auth.py:65-76 + views.py:431: el token de cliente solo se valida por firma; MisPedidosView.post
     # nunca comprueba que el usuario exista / siga siendo cliente (rol=False). Un token (hasta 30 días de refresh) de una
     # cuenta borrada, o de una cuenta luego promovida a admin, sigue creando pedidos a su nombre.
-    @unittest.expectedFailure
     def test_token_de_cuenta_promovida_a_admin_no_crea_pedidos(self):
         self.entrar_cliente('ana@mail.com')
         Usuarios.objects.filter(pk=self.ana.pk).update(rol=True)
@@ -653,7 +650,6 @@ class MassAssignmentTest(Base):
 
     # BUG: apps/clientes/auth.py:30-49: ni el cambio de contraseña ni nada revoca los tokens ya emitidos: un access/refresh
     # robado sigue valiendo 30 días aunque la víctima cambie su contraseña.
-    @unittest.expectedFailure
     def test_cambiar_contrasena_invalida_el_refresh_anterior(self):
         d = self.entrar_cliente('ana@mail.com')
         r = self.client.patch(C + 'perfil/', {'contrasena_actual': 'secreto123', 'contrasena_nueva': 'otra-clave-1'}, format='json')
@@ -703,7 +699,6 @@ class ManipulacionDePedidosTest(Base):
     # BUG: apps/clientes/views.py:49 usa str.isdigit(): '²' (superíndice) es "dígito" para isdigit() pero int('²') lanza
     # ValueError -> 500 en cantidad, id_producto e id_restaurante. Cualquier cliente logueado (y sin loguear en
     # /restaurantes) provoca un 500 con {"cantidad": "²"}.
-    @unittest.expectedFailure
     def test_digito_unicode_no_da_500_en_pedido(self):
         r = self.pedir(items=self.item(cantidad='²'))
         self.assertLess(r.status_code, 500)
@@ -719,7 +714,6 @@ class ManipulacionDePedidosTest(Base):
 
     # BUG: views.py:469 solo exige cantidad >= 1, sin tope. En un producto sin control de stock (stock null) se acepta
     # cantidad=10**9 -> pedido de $500.000.000.000 (y un repartidor lo ve en disponibles). No hay máximo por línea.
-    @unittest.expectedFailure
     def test_cantidad_absurda_en_producto_sin_stock_se_rechaza(self):
         r = self.pedir(items=self.item(self.coca, 10**9))
         self.assertEqual(r.status_code, 400)
@@ -750,7 +744,6 @@ class ManipulacionDePedidosTest(Base):
 
     # BUG: views.py:458-471 no limita la cantidad de líneas: una sola request con miles de items crea miles de
     # DetallePedido (y consultas) -> amplificación / DoS barato para un cliente autenticado.
-    @unittest.expectedFailure
     def test_lista_gigante_de_items_se_rechaza(self):
         r = self.pedir(items=[{'id_producto': self.coca.pk, 'cantidad': 1}] * 3000)
         self.assertEqual(r.status_code, 400)
@@ -780,7 +773,6 @@ class ManipulacionDePedidosTest(Base):
 
     # BUG: views.py:455 hace `metodo_pago not in METODOS_PAGO` (dict): con una lista o dict en el JSON el hash falla
     # (TypeError: unhashable) -> 500. {"metodo_pago": []} desde cualquier cliente logueado.
-    @unittest.expectedFailure
     def test_metodo_pago_lista_o_dict_no_da_500(self):
         for valor in [[], {}, ['efectivo'], {'a': 1}]:
             r = self.pedir(metodo_pago=valor)
@@ -793,13 +785,11 @@ class ManipulacionDePedidosTest(Base):
 
     # BUG: views.py:450 acepta direccion_entrega de cualquier largo (el perfil sí limita a 255, registro no limita).
     # Un POST con 1 MB de dirección se guarda tal cual en pedidos.direccion_entega (y se lista a repartidores y panel).
-    @unittest.expectedFailure
     def test_direccion_gigante_se_rechaza(self):
         self.assertEqual(self.pedir(direccion_entrega='x' * 100_000).status_code, 400)
 
     # BUG: sin validación de caracteres de control: '\x00' en texto libre; en PostgreSQL (la base real) un NUL en un
     # varchar da error de la DB -> 500. En SQLite de test se guarda sin queja, por eso acá se exige 400.
-    @unittest.expectedFailure
     def test_direccion_con_caracter_nulo_se_rechaza(self):
         self.assertEqual(self.pedir(direccion_entrega='Calle\x001').status_code, 400)
 
@@ -965,7 +955,6 @@ class FlujoRepartidorTest(Base):
     # BUG: apps/clientes/repartidor.py:29-33 sin_terminar() compara con estado__iexact (sin strip) pero estado_es() sí
     # hace strip: un pedido con estado "Entregado " / " cancelado" (el estado es texto libre; la base lo puede tener
     # así) se puede TOMAR, queda asignado a un repartidor y aparece en "disponibles".
-    @unittest.expectedFailure
     def test_tomar_pedido_terminado_con_espacios_en_el_estado(self):
         for estado in ['Entregado ', ' cancelado', 'CANCELADO\n']:
             p = self.pedido(estado=estado)
@@ -1094,14 +1083,12 @@ class EntradasHostilesTest(Base):
 
     # BUG: views.py:135-138: el registro no limita el largo de nombre ni de direccion (el PATCH de perfil sí: 100 y 255).
     # Un POST de registro con 1 MB de nombre se guarda en usuarios.nombre; con columnas acotadas en Postgres da 500.
-    @unittest.expectedFailure
     def test_registro_con_nombre_o_direccion_gigantes_se_rechaza(self):
         r = self.client.post(C + 'registro/', {'nombre': 'x' * 100_000, 'email': 'g@mail.com', 'telefono': '1144443333',
                                                'contrasena': 'secreto123', 'direccion': 'y' * 100_000}, format='json')
         self.assertEqual(r.status_code, 400)
 
     # BUG: views.py:135-139: el registro tampoco valida el email (largo ni formato): "x" o 1 MB sin '@' crean cuenta.
-    @unittest.expectedFailure
     def test_registro_valida_formato_y_largo_del_email(self):
         for email in ['sin-arroba', 'a@' + 'b' * 100_000]:
             r = self.client.post(C + 'registro/', {'nombre': 'X', 'email': email, 'telefono': '1144443333',
@@ -1110,7 +1097,6 @@ class EntradasHostilesTest(Base):
 
     # BUG: views.py:135-139 (registro) y views.py:450: '\x00' en nombre/dirección. Postgres rechaza NUL en text/varchar
     # (DataError -> 500); SQLite de test lo acepta. Debería rechazarse con 400 antes de tocar la base.
-    @unittest.expectedFailure
     def test_registro_con_caracter_nulo_se_rechaza(self):
         r = self.client.post(C + 'registro/', {'nombre': 'Ana\x00', 'email': 'nul@mail.com', 'telefono': '1144443333',
                                                'contrasena': 'secreto123'}, format='json')
@@ -1153,7 +1139,6 @@ class EntradasHostilesTest(Base):
     # BUG: apps/core/views.py:139-170 (POST products/): precio y stock se mandan a la base sin validar. precio="abc" o
     # stock="abc" -> ValueError/DataError -> 500; precio negativo se acepta (201), y un cliente que lo pide obtiene un
     # pedido con total negativo / descuento. Otros PATCH del panel sí validan; este no.
-    @unittest.expectedFailure
     def test_panel_producto_con_precio_o_stock_invalidos(self):
         self.entrar_panel()
         malos = []
@@ -1173,7 +1158,6 @@ class EntradasHostilesTest(Base):
     # BUG: apps/core/views.py:155-161: la imagen del producto se guarda sin validar tipo/extension y se sirve desde
     # /media/ con el mismo origen que la API: subir un .html/.svg con <script> da XSS almacenado (el nombre sí lo
     # sanea Django, el contenido no). Debería aceptar solo imagenes.
-    @unittest.expectedFailure
     def test_panel_no_acepta_archivos_que_no_son_imagen(self):
         self.entrar_panel()
         with tempfile.TemporaryDirectory() as tmp, override_settings(MEDIA_ROOT=tmp):
@@ -1209,7 +1193,6 @@ class EntradasHostilesTest(Base):
     # BUG: views.py:329 (MenuView) y views.py:473 (Productos.in_bulk): un id fuera del rango de bigint
     # (/api/cliente/restaurantes/1000000000000000000000000000000/productos/, o id_producto=10**30 en el body del
     # pedido) llega a la base y explota -> 500 (OverflowError en SQLite, "out of range" en Postgres).
-    @unittest.expectedFailure
     def test_ids_enormes_en_menu_y_en_pedido_no_dan_500(self):
         malos = []
         r = self.client.get(C + f'restaurantes/{10**30}/productos/')
@@ -1266,40 +1249,31 @@ class ContentTypeYCuerposTest(Base):
     # que es lista/string/número/true/null request.data no tiene .get -> AttributeError -> 500 en registro, login y
     # refresh del cliente (sin autenticación), crear pedido, estado de pedido del repartidor y login del panel.
     # En PATCH perfil / PATCH estado repartidor (`'x' in datos`) rompen solo número/true/null.
-    @unittest.expectedFailure
     def test_registro_cliente_con_cuerpo_no_objeto(self):
         self.no500('post', C + 'registro/')
 
-    @unittest.expectedFailure
     def test_login_cliente_con_cuerpo_no_objeto(self):
         self.no500('post', C + 'login/')
 
-    @unittest.expectedFailure
     def test_refresh_cliente_con_cuerpo_no_objeto(self):
         self.no500('post', C + 'token/refresh/')
 
-    @unittest.expectedFailure
     def test_login_panel_con_cuerpo_no_objeto(self):
         self.no500('post', P + 'login/')
 
-    @unittest.expectedFailure
     def test_crear_pedido_con_cuerpo_no_objeto(self):
         self.no500('post', C + 'pedidos/', self.login_cliente()['access'])
 
-    @unittest.expectedFailure
     def test_patch_perfil_con_cuerpo_no_objeto(self):
         self.no500('patch', C + 'perfil/', self.login_cliente()['access'])
 
-    @unittest.expectedFailure
     def test_patch_estado_repartidor_con_cuerpo_no_objeto(self):
         self.no500('patch', R + 'estado/', self.nuevo_repartidor()['access'])
 
-    @unittest.expectedFailure
     def test_estado_pedido_repartidor_con_cuerpo_no_objeto(self):
         tok = self.nuevo_repartidor()['access']
         self.no500('post', R + f'pedidos/{self.pedido().pk}/estado/', tok)
 
-    @unittest.expectedFailure
     def test_panel_con_cuerpo_no_objeto(self):
         tok = self.login_panel()['access']
         p = self.pedido()
@@ -1364,7 +1338,6 @@ class FuerzaBrutaTest(Base):
     # BUG: config/settings.py: el throttling usa REMOTE_ADDR salvo que venga X-Forwarded-For y NUM_PROXIES no está
     # configurado: DRF entonces toma el header como identidad. Rotando X-Forwarded-For en cada intento un atacante
     # nunca llega al 429 y puede hacer fuerza bruta ilimitada a login/registro. Fix: NUM_PROXIES en REST_FRAMEWORK.
-    @unittest.expectedFailure
     def test_throttling_no_se_evade_rotando_x_forwarded_for(self):
         with self.limite():
             codigos = [self.client.post(C + 'login/', {'email': 'ana@mail.com', 'contrasena': 'mala'}, format='json',
@@ -1476,3 +1449,44 @@ class FugasDeInformacionTest(Base):
         self.assertEqual(sorted(p['nombre'] for p in r.data), ['Coca', 'Muzza'])
         for p in r.data:
             self.assertEqual(set(p), {'id_producto', 'nombre', 'descripcion', 'precio', 'imagen_url', 'stock'})
+
+
+# =====================================================================
+# 9. Arreglos posteriores a la auditoría
+# =====================================================================
+
+class ArreglosTest(Base):
+
+    def test_cambiar_contrasena_devuelve_tokens_nuevos_que_sirven(self):
+        self.entrar_cliente('ana@mail.com')
+        r = self.client.patch(C + 'perfil/', {'contrasena_actual': 'secreto123', 'contrasena_nueva': 'otra-clave-1'}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.con(r.data['access'])
+        self.assertEqual(self.client.get(C + 'perfil/').status_code, 200)
+        self.anon()
+        self.assertEqual(self.client.post(C + 'token/refresh/', {'refresh': r.data['refresh']}, format='json').status_code, 200)
+
+    def test_perfil_sin_cambio_de_contrasena_no_trae_tokens(self):
+        self.entrar_cliente('ana@mail.com')
+        r = self.client.patch(C + 'perfil/', {'nombre': 'Ana B'}, format='json')
+        self.assertNotIn('access', r.data)
+
+    def test_pedido_con_mas_de_100_unidades_o_50_lineas(self):
+        self.entrar_cliente('ana@mail.com')
+        for items in ([{'id_producto': self.coca.pk, 'cantidad': 101}], [{'id_producto': self.coca.pk, 'cantidad': 1}] * 51):
+            r = self.client.post(C + 'pedidos/', {'id_restaurante': self.rest_a.pk, 'direccion_entrega': 'x',
+                                                  'metodo_pago': 'efectivo', 'items': items}, format='json')
+            self.assertEqual(r.status_code, 400)
+
+    def test_panel_acepta_png_real_con_nombre_generado(self):
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (2, 2)).save(buf, 'PNG')
+        self.entrar_panel()
+        with tempfile.TemporaryDirectory() as tmp, override_settings(MEDIA_ROOT=tmp):
+            f = SimpleUploadedFile('malo.html', buf.getvalue(), content_type='text/html')
+            r = self.client.post(P + 'products/', {'nombre': 'P', 'precio': 10, 'stock': 1, 'imagen': f}, format='multipart')
+            self.assertEqual(r.status_code, 201, r.content)
+            self.assertTrue(r.data['imagen_url'].endswith('.png'))
+            self.assertNotIn('malo', r.data['imagen_url'])

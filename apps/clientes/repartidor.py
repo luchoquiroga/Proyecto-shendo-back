@@ -27,10 +27,8 @@ def estado_es(estado, *valores):
 
 
 def sin_terminar():
-    q = Q()
-    for e in TERMINADOS:
-        q |= Q(estado__iexact=e)
-    return ~q
+    # Regex en vez de iexact: el estado es texto libre y puede traer espacios o saltos alrededor.
+    return ~Q(estado__iregex=r'^\s*(' + '|'.join(TERMINADOS) + r')\s*$')
 
 
 def requiere_repartidor(metodo):

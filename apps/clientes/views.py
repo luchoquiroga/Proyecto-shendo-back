@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth.hashers import check_password, make_password
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import F, Min, Prefetch, Q
 from django.utils import timezone
@@ -11,7 +13,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.models import Categoria, DetallePedido, HorariosRestaurante, Pagos, Pedidos, Productos, Repartidor, Restaurantes, Usuarios
-from .auth import renovar, requiere_cliente, sesion
+from apps.core.cuerpo import CuerpoObjetoMixin
+from .auth import renovar, requiere_cliente, sesion, tokens
 
 # Endpoints de la app mobile de clientes (la persona que hace el pedido).
 # El panel del restaurante sigue en apps/core; esto no lo toca.
@@ -32,6 +35,11 @@ def telefono_valido(telefono):
     return bool(TELEFONO_VALIDO.match(telefono)) and 6 <= digitos <= 15 and len(telefono) <= 30
 
 
+MAX_ID = 2**63 - 1
+MAX_LINEAS = 50
+MAX_CANTIDAD = 100
+
+
 def error(mensaje, codigo=status.HTTP_400_BAD_REQUEST):
     return Response({'error': mensaje}, status=codigo)
 
@@ -42,13 +50,12 @@ def texto(valor):
 
 def entero(valor):
     """int para ids y cantidades que vienen en el JSON; None si no es un entero."""
-    if isinstance(valor, bool):
+    if isinstance(valor, str):
+        # isdecimal + ascii: str.isdigit() acepta '²' e int() falla con eso.
+        valor = int(valor) if valor.isascii() and valor.strip().isdecimal() else None
+    if isinstance(valor, bool) or not isinstance(valor, int):
         return None
-    if isinstance(valor, int):
-        return valor
-    if isinstance(valor, str) and valor.strip().isdigit():
-        return int(valor)
-    return None
+    return valor if abs(valor) <= MAX_ID else None  # bigint de la base
 
 
 TZ_AR = ZoneInfo('America/Argentina/Buenos_Aires')
@@ -121,7 +128,7 @@ def numero(valor):
 
 # ---------- Cuenta ----------
 
-class ClienteAPIView(APIView):
+class ClienteAPIView(CuerpoObjetoMixin, APIView):
     # La app valida su propio token (ver auth.py). Sin esto, el autenticador global
     # del panel (CustomJWTAuthentication) responde 403 con token vencido y la app
     # espera 401 para cerrar la sesión.
@@ -147,6 +154,16 @@ class RegistroView(ClienteAPIView):
 
         if len(contrasena) < 6:
             return error('La contraseña debe tener al menos 6 caracteres')
+
+        if len(nombre) > 100 or len(direccion) > 255:
+            return error('El nombre o la dirección son demasiado largos')
+
+        try:
+            validate_email(email)
+        except ValidationError:
+            return error('El email no es válido')
+        if len(email) > 254:
+            return error('El email no es válido')
 
         # Contra todos los usuarios (admins incluidos): no hay UNIQUE en la base.
         if Usuarios.objects.filter(email__iexact=email).exists():
@@ -243,6 +260,7 @@ class PerfilView(ClienteAPIView):
         if usuario is None:
             return error('Usuario no encontrado', status.HTTP_404_NOT_FOUND)
         datos = request.data
+        cambio_contrasena = False
 
         if 'nombre' in datos:
             nombre = texto(datos['nombre'])
@@ -267,9 +285,14 @@ class PerfilView(ClienteAPIView):
             if not isinstance(nueva, str) or len(nueva) < 6:
                 return error('La contraseña debe tener al menos 6 caracteres')
             usuario.contrasena = make_password(nueva)
+            cambio_contrasena = True
 
         usuario.save()
-        return Response(perfil_json(usuario))
+        respuesta = perfil_json(usuario)
+        if cambio_contrasena:
+            # Los tokens viejos dejan de valer: la app guarda estos para seguir logueada.
+            respuesta.update(tokens(usuario))
+        return Response(respuesta)
 
 
 # ---------- Catálogo (público) ----------
@@ -326,6 +349,8 @@ class RestaurantesView(ClienteAPIView):
 class MenuView(ClienteAPIView):
 
     def get(self, request, id_restaurante):
+        if id_restaurante > MAX_ID:
+            return error('Restaurante no encontrado', status.HTTP_404_NOT_FOUND)
         productos = Productos.objects.filter(
             id_restaurante=id_restaurante,
             disponible=True,
@@ -450,14 +475,18 @@ class MisPedidosView(ClienteAPIView):
         direccion = texto(request.data.get('direccion_entrega'))
         if not retiro and not direccion:
             return error('La dirección de entrega es requerida')
+        if len(direccion) > 255:
+            return error('La dirección es demasiado larga')
 
         metodo_pago = request.data.get('metodo_pago')
-        if metodo_pago not in METODOS_PAGO:
+        if not isinstance(metodo_pago, str) or metodo_pago not in METODOS_PAGO:
             return error('Elegí un método de pago')
 
         items = request.data.get('items')
         if not isinstance(items, list) or not items:
             return error('El pedido está vacío')
+        if len(items) > MAX_LINEAS:
+            return error(f'El pedido puede tener hasta {MAX_LINEAS} productos')
 
         # Cada item tiene que ser un producto disponible de este restaurante, con cantidad >= 1.
         pedidas = []
@@ -466,7 +495,7 @@ class MisPedidosView(ClienteAPIView):
                 return error('Hay productos que ya no están disponibles')
             id_producto = entero(item.get('id_producto'))
             cantidad = entero(item.get('cantidad'))
-            if id_producto is None or cantidad is None or cantidad < 1:
+            if id_producto is None or cantidad is None or not 1 <= cantidad <= MAX_CANTIDAD:
                 return error('Hay productos que ya no están disponibles')
             pedidas.append((id_producto, cantidad))
 

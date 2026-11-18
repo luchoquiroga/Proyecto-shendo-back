@@ -1,3 +1,4 @@
+import hashlib
 from datetime import timedelta
 from functools import wraps
 
@@ -27,18 +28,36 @@ def repartidor_json(repartidor):
     }
 
 
-def sesion(usuario):
-    """Respuesta de registro y login: tokens + datos de la cuenta.
-    perfil = 'repartidor' si la cuenta tiene fila en repartidor (la app muestra esa cara); si no, 'cliente'."""
-    from apps.core.models import Repartidor
+def huella(usuario):
+    """Claim corto derivado de la contraseña actual: al cambiarla, los tokens viejos dejan de servir."""
+    return hashlib.sha256((usuario.contrasena or '').encode()).hexdigest()[:16]
+
+
+def tokens(usuario):
     refresh = ClienteRefreshToken()
     refresh['tipo'] = 'cliente'  # mismo token para las dos caras; el rol se mira en la base en cada pedido
     refresh['id_usuario'] = usuario.id_usuario
     refresh['nombre'] = usuario.nombre
+    refresh['pw'] = huella(usuario)
+    return {'access': str(refresh.access_token), 'refresh': str(refresh)}
+
+
+def usuario_vigente(token):
+    """id_usuario del token si la cuenta sigue existiendo, no es admin y no cambió la contraseña; si no, None."""
+    from apps.core.models import Usuarios
+    usuario = Usuarios.objects.filter(pk=token.get('id_usuario'), rol=False).first()
+    if usuario is None or token.get('pw') != huella(usuario):
+        return None
+    return usuario.id_usuario
+
+
+def sesion(usuario):
+    """Respuesta de registro y login: tokens + datos de la cuenta.
+    perfil = 'repartidor' si la cuenta tiene fila en repartidor (la app muestra esa cara); si no, 'cliente'."""
+    from apps.core.models import Repartidor
     repartidor = Repartidor.objects.filter(id_usuario=usuario.id_usuario).first()
     return {
-        'access': str(refresh.access_token),
-        'refresh': str(refresh),
+        **tokens(usuario),
         'id_usuario': usuario.id_usuario,
         'nombre': usuario.nombre,
         'email': usuario.email,
@@ -57,7 +76,7 @@ def renovar(refresh_str):
         refresh = ClienteRefreshToken(refresh_str)
     except TokenError:
         return None
-    if refresh.get('tipo') != 'cliente':
+    if refresh.get('tipo') != 'cliente' or usuario_vigente(refresh) is None:
         return None
     return str(refresh.access_token)
 
@@ -73,7 +92,7 @@ def get_cliente_from_token(request):
         return None
     if token.get('tipo') != 'cliente':
         return None
-    return token.get('id_usuario')
+    return usuario_vigente(token)
 
 
 def requiere_cliente(metodo):

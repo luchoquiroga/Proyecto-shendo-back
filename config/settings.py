@@ -61,6 +61,8 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 REST_FRAMEWORK = {
+    # Si se despliega detrás de un proxy, poner acá cuántos hay (si no, X-Forwarded-For evade el throttling).
+    'NUM_PROXIES': 0,
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'apps.core.authentication.CustomJWTAuthentication',
     ],
