@@ -5,6 +5,7 @@
 # Flujo: el restaurante maneja pendiente/preparando/listo desde el panel.
 # El repartidor ve los pedidos a domicilio sin repartidor y no terminados -> "tomar" (se asigna)
 # -> "en camino" (lo retiró) -> "entregado" (se marca el pago como cobrado).
+import re
 from functools import wraps
 
 from django.db.models import Q
@@ -46,8 +47,17 @@ def requiere_repartidor(metodo):
     return wrapper
 
 
+def solo_calle(direccion):
+    """'Av. San Martín 1234, depto 5' -> 'Av. San Martín': la zona sin la altura ni el depto.
+    shortcut: corta en el primer dígito, así que una calle con número en el nombre ('Calle 9 456') queda 'Calle';
+    si molesta, guardar calle y altura en campos separados."""
+    calle = re.split(r'\d', direccion or '', maxsplit=1)[0].strip(' ,.-#°º')
+    return calle or None
+
+
 def entregas_json(pedidos, con_cliente):
-    """pedidos_json + datos para ir a buscar (restaurante) y, si ya es suyo, para entregar (cliente)."""
+    """pedidos_json + datos para ir a buscar (restaurante) y, si ya es suyo, para entregar (cliente).
+    Sin con_cliente (pedidos disponibles) solo se ve la calle: la dirección exacta, al tomarlo."""
     pedidos = list(pedidos)
     data = pedidos_json(pedidos)
     for d, p in zip(data, pedidos):
@@ -57,6 +67,8 @@ def entregas_json(pedidos, con_cliente):
         if con_cliente:
             u = p.id_usuario
             d['cliente'] = {'nombre': u.nombre, 'telefono': u.telefono} if u else None
+        else:
+            d['direccion_entrega'] = solo_calle(d['direccion_entrega'])
     return data
 
 

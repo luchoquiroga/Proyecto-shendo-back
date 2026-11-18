@@ -85,7 +85,7 @@ Flujo: el restaurante maneja `pendiente → preparando → listo` desde el panel
 | Método | Ruta | Body / notas |
 |---|---|---|
 | GET / PATCH | `estado/` | Mis datos. PATCH parcial: `disponible` (bool), `vehiculo` |
-| GET | `disponibles/` | Pedidos para tomar (más viejo primero), con dirección y teléfono del restaurante. Sin datos del cliente |
+| GET | `disponibles/` | Pedidos para tomar (más viejo primero), con dirección y teléfono del restaurante. Sin datos del cliente: de la entrega solo la calle, sin altura (la dirección completa, al tomarlo) |
 | GET | `pedidos/` | Mis entregas: activas primero, después el historial. Incluyen `cliente: {nombre, telefono}` |
 | POST | `pedidos/<id>/tomar/` | Hay que estar `disponible`. Si otro lo tomó antes → `409` |
 | POST | `pedidos/<id>/soltar/` | Lo devuelve a disponibles (solo si todavía no está en camino) |

@@ -148,3 +148,28 @@ class FlujoTest(RepartidorTest):
         self.assertEqual((r.data['disponible'], r.data['vehiculo']), (True, 'Bici'))
         for malo in [{'disponible': 'si'}, {'vehiculo': ''}]:
             self.assertEqual(self.client.patch(R + 'estado/', malo, format='json').status_code, 400, malo)
+
+
+class SoloCalleTest(RepartidorTest):
+
+    def test_solo_calle(self):
+        from apps.clientes.repartidor import solo_calle
+        casos = {
+            'Calle Falsa 456': 'Calle Falsa',
+            'Av. San Martín 1234, depto 5B': 'Av. San Martín',
+            'Belgrano N° 50': 'Belgrano N',
+            'Calle Sin Número': 'Calle Sin Número',
+            '1234': None,
+            '': None,
+            None: None,
+        }
+        for entrada, esperado in casos.items():
+            self.assertEqual(solo_calle(entrada), esperado, entrada)
+
+    def test_disponibles_muestra_solo_la_calle_y_al_tomarlo_la_completa(self):
+        p = self.pedido()  # direccion_entega = 'Calle 9'
+        Pedidos.objects.filter(pk=p.pk).update(direccion_entega='Av. Siempreviva 742')
+        self.entrar()
+        self.assertEqual(self.client.get(R + 'disponibles/').data[0]['direccion_entrega'], 'Av. Siempreviva')
+        r = self.client.post(R + f'pedidos/{p.pk}/tomar/')
+        self.assertEqual(r.data['direccion_entrega'], 'Av. Siempreviva 742')

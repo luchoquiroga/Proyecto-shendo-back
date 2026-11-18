@@ -477,7 +477,6 @@ class IdorRepartidorTest(Base):
     # dirección de la casa del cliente, para CUALQUIER repartidor antes de tomar el pedido (API.md dice "sin datos del
     # cliente" y "los ve solo después de tomar"). Como el registro de repartidor es abierto, cualquiera se registra con
     # repartidor:true y recorre las direcciones de todos los pedidos pendientes.
-    @unittest.expectedFailure
     def test_disponibles_no_expone_direccion_exacta_del_cliente(self):
         self.como(self.token_pepe)
         self.assertNotIn('Calle Secreta 9', self.client.get(R + 'disponibles/').content.decode())
