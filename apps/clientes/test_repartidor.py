@@ -110,7 +110,7 @@ class FlujoTest(RepartidorTest):
         self.pedido(tipo='retiro')
         self.pedido(estado='Entregado')
         self.pedido(estado='cancelado')
-        otro = Repartidor.objects.create(nombre='Otro', estado='disponible')
+        otro = Repartidor.objects.create(nombre='Otro', estado='disponible', id_usuario=Usuarios.objects.create(nombre='Otro', email='otro@mail.com', rol=False))
         tomado = self.pedido()
         tomado.id_repartidor = otro
         tomado.save()
@@ -120,7 +120,7 @@ class FlujoTest(RepartidorTest):
 
     def test_pedido_ajeno(self):
         p = self.pedido()
-        otro = Repartidor.objects.create(nombre='Otro', estado='disponible')
+        otro = Repartidor.objects.create(nombre='Otro', estado='disponible', id_usuario=Usuarios.objects.create(nombre='Otro', email='otro@mail.com', rol=False))
         p.id_repartidor = otro
         p.save()
         self.entrar()
@@ -166,9 +166,15 @@ class EstadoYPatenteTest(RepartidorTest):
         self.assertEqual(self.estado(), 'ocupado')  # le queda a
         self.client.post(R + f'pedidos/{a.pk}/estado/', {'estado': 'en camino'}, format='json')
         self.assertEqual(self.estado(), 'ocupado')
-        self.client.post(R + f'pedidos/{a.pk}/estado/', {'estado': 'entregado'}, format='json')
+        a.refresh_from_db()
+        self.assertIsNotNone(a.hora_salida)
+        self.assertIsNone(a.hora_entrega)
+        r = self.client.post(R + f'pedidos/{a.pk}/estado/', {'estado': 'entregado'}, format='json')
         self.assertEqual(self.estado(), 'disponible')
         self.assertEqual(Pagos.objects.get(id_pedido=a).estado_pago, 'pagado')
+        a.refresh_from_db()
+        self.assertGreaterEqual(a.hora_entrega, a.hora_salida)
+        self.assertIsNotNone(r.data['hora_entrega'])
 
     def test_desconectado_no_cambia_al_entregar(self):
         self.entrar()

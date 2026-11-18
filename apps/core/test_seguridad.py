@@ -152,7 +152,8 @@ class CategoriasTest(PanelTest):
 class PanelVariosTest(PanelTest):
 
     def test_estado_de_pedido(self):
-        p = Pedidos.objects.create(fecha=timezone.now(), id_restaurante=self.resto, estado='pendiente', total=10)
+        cliente = Usuarios.objects.create(nombre='Cli', email='cli@mail.com', rol=False)
+        p = Pedidos.objects.create(fecha=timezone.now(), id_restaurante=self.resto, id_usuario=cliente, estado='pendiente', total=10)
         self.admin()
         self.loguear()
         url = f'/api/orders/{p.pk}/'

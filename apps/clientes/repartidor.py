@@ -206,7 +206,9 @@ class EstadoPedidoView(ClienteAPIView):
             return error('estado tiene que ser "en camino" o "entregado"')
 
         pedido.estado = nuevo
-        pedido.save(update_fields=['estado'])
+        campo_hora = 'hora_salida' if nuevo == EN_CAMINO else 'hora_entrega'
+        setattr(pedido, campo_hora, timezone.now())
+        pedido.save(update_fields=['estado', campo_hora])
         if nuevo == ENTREGADO:
             # Se paga al recibir: al entregar, el pago queda cobrado.
             Pagos.objects.filter(id_pedido=pedido, estado_pago='pendiente').update(estado_pago='pagado', fecha_pago=timezone.now())

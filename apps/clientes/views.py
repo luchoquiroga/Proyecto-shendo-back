@@ -431,6 +431,8 @@ def pedidos_json(pedidos):
             'tipo_entrega': p.tipo_entrega or 'domicilio',
             'costo_envio': envio,
             'direccion_entrega': p.direccion_entrega,
+            'hora_salida': p.hora_salida,
+            'hora_entrega': p.hora_entrega,
             'restaurante': p.id_restaurante.nombre if p.id_restaurante else None,
             'metodo_pago': METODOS_PAGO.get(pago.metodo_pago, pago.metodo_pago) if pago else None,
             'pagado': bool(pago and pago.estado_pago == 'pagado'),

@@ -74,7 +74,7 @@ Los horarios del local se cargan desde el admin de Django (`/admin/`).
 | GET | `pedidos/` | cliente | Mis pedidos, del más nuevo al más viejo |
 | POST | `pedidos/` | cliente | `{id_restaurante, items: [{id_producto, cantidad}], tipo_entrega: "domicilio"\|"retiro", direccion_entrega?, metodo_pago}`. Valida stock, horario y pedido mínimo; suma el envío si es a domicilio |
 
-Cada pedido trae `repartidor: {nombre, telefono, vehiculo}` cuando alguien lo tomó (si no, `null`).
+Cada pedido trae `repartidor: {nombre, telefono, vehiculo}` cuando alguien lo tomó (si no, `null`). También `hora_salida` y `hora_entrega` (ISO, o `null`): las pone el back cuando el repartidor marca en camino y entregado.
 
 ## App de repartidores (`/api/repartidor/`)
 

@@ -80,7 +80,7 @@ class AuthUserUserPermissions(models.Model):
 class Categoria(models.Model):
     id_categoria = models.BigAutoField(db_column='id_Categoria', primary_key=True)  # Field name made lowercase.
     nombre = models.CharField()
-    id_restaurante = models.ForeignKey('Restaurantes', models.DO_NOTHING, db_column='id_restaurante',blank=True, null=True, 
+    id_restaurante = models.ForeignKey('Restaurantes', models.DO_NOTHING, db_column='id_restaurante', 
         #se agrega esto para que no choque con el atributo de categoria de restaurante
         related_name='categorias')
   
@@ -93,7 +93,7 @@ class DetallePedido(models.Model):
     id_detalle = models.BigAutoField(primary_key=True)
     cantidad = models.IntegerField()
     precio_unitario = models.FloatField(blank=True, null=True)  # precio del producto al momento de la compra
-    id_pedido = models.ForeignKey('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
+    id_pedido = models.ForeignKey('Pedidos', models.DO_NOTHING, db_column='id_pedido')
     id_producto = models.ForeignKey('Productos', models.DO_NOTHING, db_column='id_producto', blank=True, null=True)
 
     class Meta:
@@ -154,7 +154,7 @@ class Pagos(models.Model):
     estado_pago = models.TextField(default='pendiente')  # CHECK en la base: 'pendiente' | 'pagado'
     fecha_pago = models.DateTimeField(blank=True, null=True)  # en la base es timestamptz
     # UNIQUE en la base: un pago por pedido.
-    id_pedido = models.OneToOneField('Pedidos', models.DO_NOTHING, db_column='id_pedido', blank=True, null=True)
+    id_pedido = models.OneToOneField('Pedidos', models.DO_NOTHING, db_column='id_pedido')
 
     class Meta:
         managed = False
@@ -167,9 +167,11 @@ class Pedidos(models.Model):
     estado = models.TextField(blank=True, null=True)  # en la base es text ('pendiente', ...)
     total = models.FloatField(blank=True, null=True)
     direccion_entrega = models.CharField(blank=True, null=True)
+    hora_salida = models.DateTimeField(blank=True, null=True)  # al marcar en camino
+    hora_entrega = models.DateTimeField(blank=True, null=True)  # al marcar entregado
     tipo_entrega = models.TextField(default='domicilio')  # CHECK en la base: 'domicilio' | 'retiro'
-    id_usuario = models.ForeignKey('Usuarios', models.DO_NOTHING, db_column='id_usuario', blank=True, null=True)
-    id_restaurante = models.ForeignKey('Restaurantes', models.DO_NOTHING, db_column='id_restaurante', blank=True, null=True)
+    id_usuario = models.ForeignKey('Usuarios', models.DO_NOTHING, db_column='id_usuario')
+    id_restaurante = models.ForeignKey('Restaurantes', models.DO_NOTHING, db_column='id_restaurante')
     # Agregada 2026-11-18. Null = todavía nadie lo tomó (o es para retiro).
     id_repartidor = models.ForeignKey('Repartidor', models.DO_NOTHING, db_column='id_repartidor', blank=True, null=True,
                                       related_name='pedidos')
@@ -187,7 +189,7 @@ class Productos(models.Model):
     stock = models.SmallIntegerField(blank=True, null=True)
     imagen_url = models.CharField(blank=True, null=True)
     disponible = models.BooleanField(blank=True, null=True)
-    id_restaurante = models.ForeignKey('Restaurantes', models.DO_NOTHING, db_column='id_restaurante', blank=True, null=True)
+    id_restaurante = models.ForeignKey('Restaurantes', models.DO_NOTHING, db_column='id_restaurante')
     id_categoria = models.ForeignKey(Categoria, models.DO_NOTHING, db_column='id_Categoria', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
@@ -204,7 +206,7 @@ class Repartidor(models.Model):
     patente = models.CharField(blank=True, null=True)
     estado = models.TextField(default='desconectado')  # CHECK en la base: 'disponible' | 'ocupado' | 'desconectado'
     # Agregada 2026-11-18 (UNIQUE en la base): la cuenta con la que el repartidor entra a la app.
-    id_usuario = models.OneToOneField('Usuarios', models.DO_NOTHING, db_column='id_usuario', blank=True, null=True,
+    id_usuario = models.OneToOneField('Usuarios', models.DO_NOTHING, db_column='id_usuario',
                                       related_name='repartidor')
 
     class Meta:
