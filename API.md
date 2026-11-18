@@ -15,6 +15,14 @@ Tests (SQLite en memoria, no tocan Supabase):
 python manage.py test apps.clientes apps.core.test_seguridad --settings=config.settings_test
 ```
 
+Incluye `test_e2e.py` (ciclo completo cliente → panel → repartidor → entregado, solo por HTTP) y `test_adversarial.py` (ataques: tokens cruzados o alterados, IDOR, mass assignment, entradas hostiles, flujo fuera de orden, fuerza bruta).
+
+Prueba de punta a punta **contra el servidor real** (con `runserver` corriendo). Escribe en la base del `.env`: crea un cliente, un repartidor y un pedido de prueba, recorre el ciclo y al final borra todo y repone el stock. Necesita un restaurante abierto con un producto con stock:
+
+```
+python manage.py e2e_vivo --confirmar
+```
+
 ### Variables del `.env`
 
 | Variable | Para qué | Por defecto |
